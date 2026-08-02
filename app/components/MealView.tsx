@@ -1,15 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import defaultMealData from "@/meals.json";
 import { MealDay, MealItem } from "../types";
+import { db } from "@/lib/firebase";
+import { ref, onValue } from "firebase/database";
 import { Utensils, Coffee, Moon, Sun, Flame, Sparkles } from "lucide-react";
 
 export default function MealView() {
-  const mealDays: MealDay[] = defaultMealData.meals as MealDay[];
+  const [mealDays, setMealDays] = useState<MealDay[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("retreat_meals");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    return defaultMealData.meals as MealDay[];
+  });
+
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(0);
 
-  const activeDay = mealDays[selectedDayIndex] || mealDays[0];
+  useEffect(() => {
+    const mealsRef = ref(db, "meals");
+    const unsubscribe = onValue(
+      mealsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list = Array.isArray(data) ? data : Object.values(data);
+          setMealDays(list as MealDay[]);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_meals", JSON.stringify(list));
+          }
+        }
+      },
+      (error) => {
+        console.warn("Firebase 식단표 로드 오류, 로컬 저장소/defaultMealData 사용:", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  const activeDay = mealDays[selectedDayIndex] || mealDays[0] || { dayLabel: "", date: "", items: [] };
 
   const getMealIcon = (type: string) => {
     switch (type) {
@@ -47,9 +84,9 @@ export default function MealView() {
       <div className="flex bg-slate-200/80 p-1.5 rounded-2xl gap-1.5 shadow-inner">
         {mealDays.map((day, idx) => (
           <button
-            key={day.date}
+            key={day.date || idx}
             onClick={() => setSelectedDayIndex(idx)}
-            className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition-all duration-200 ${
+            className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
               selectedDayIndex === idx
                 ? "bg-white text-blue-900 shadow-md scale-[1.02]"
                 : "text-slate-600 hover:text-slate-900"
@@ -73,51 +110,57 @@ export default function MealView() {
 
       {/* 식단 카드 리스트 */}
       <div className="space-y-4">
-        {activeDay.items.map((meal: MealItem, idx: number) => (
-          <div
-            key={idx}
-            className="bg-white rounded-3xl p-5 border border-slate-100 shadow-md hover:shadow-lg transition-all duration-300 relative overflow-hidden"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                  {getMealIcon(meal.type)}
+        {activeDay.items && activeDay.items.length > 0 ? (
+          activeDay.items.map((meal: MealItem, idx: number) => (
+            <div
+              key={idx}
+              className="bg-white rounded-3xl p-5 border border-slate-100 shadow-md hover:shadow-lg transition-all duration-300 relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+                    {getMealIcon(meal.type)}
+                  </div>
+                  <div>
+                    <span
+                      className={`text-xs font-black px-2.5 py-0.5 rounded-md border ${getMealBadgeColor(
+                        meal.type
+                      )}`}
+                    >
+                      {meal.type}
+                    </span>
+                    <p className="text-[11px] font-bold text-slate-400 mt-0.5">{meal.time}</p>
+                  </div>
                 </div>
-                <div>
-                  <span
-                    className={`text-xs font-black px-2.5 py-0.5 rounded-md border ${getMealBadgeColor(
-                      meal.type
-                    )}`}
-                  >
-                    {meal.type}
-                  </span>
-                  <p className="text-[11px] font-bold text-slate-400 mt-0.5">{meal.time}</p>
-                </div>
+
+                {meal.highlight && (
+                  <div className="flex items-center gap-1 text-[11px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                    <Sparkles className="w-3 h-3 text-indigo-500" />
+                    <span>{meal.highlight}</span>
+                  </div>
+                )}
               </div>
 
-              {meal.highlight && (
-                <div className="flex items-center gap-1 text-[11px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                  <Sparkles className="w-3 h-3 text-indigo-500" />
-                  <span>{meal.highlight}</span>
-                </div>
-              )}
+              {/* 메뉴 내용 */}
+              <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100/80">
+                <p className="text-sm font-bold text-slate-800 leading-relaxed">
+                  {meal.menu}
+                </p>
+              </div>
             </div>
-
-            {/* 메뉴 내용 */}
-            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100/80">
-              <p className="text-sm font-bold text-slate-800 leading-relaxed">
-                {meal.menu}
-              </p>
-            </div>
+          ))
+        ) : (
+          <div className="bg-white rounded-3xl p-8 text-center text-slate-400 font-bold border border-slate-100">
+            등록된 식단이 없습니다.
           </div>
-        ))}
+        )}
       </div>
 
-      {/* 원산지 / 안권 안내 카드 */}
-      <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-4 text-center">
+      {/* 원산지 / 안내 카드 */}
+      <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-4 text-center space-y-1">
         <p className="text-xs text-blue-800 font-bold">💡 식사 관련 안내</p>
-        <p className="text-[11px] text-blue-600 mt-1 font-medium leading-normal">
-          알레르기나 특이 체질이 있으신 분은 임원진(임원24)에 미리 문의해 주시기 바랍니다.
+        <p className="text-[11px] text-blue-600 font-medium leading-normal">
+          식단 변경이나 식단표 수정은 <strong>[관리자 센터 &gt; 식단표 관리]</strong>에서 가능합니다.
         </p>
       </div>
     </div>

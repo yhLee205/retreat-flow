@@ -10,8 +10,22 @@ interface ComplaintsViewProps {
   isAdminLoggedIn: boolean;
 }
 
+const LOCAL_STORAGE_KEY = "retreat_complaints";
+
 export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps) {
-  const [complaints, setComplaints] = useState<ComplaintItem[]>([]);
+  const [complaints, setComplaints] = useState<ComplaintItem[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    return [];
+  });
   const [loading, setLoading] = useState(true);
 
   // 작성 모달 State
@@ -30,24 +44,38 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
 
   useEffect(() => {
     const complaintsRef = ref(db, "complaints");
-    const unsubscribe = onValue(complaintsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const list: ComplaintItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-          id,
-          ...value,
-        }));
-        // 최근 순 정렬
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setComplaints(list);
-      } else {
-        setComplaints([]);
+    const unsubscribe = onValue(
+      complaintsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list: ComplaintItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
+            id,
+            ...value,
+          }));
+          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setComplaints(list);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list));
+          }
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.warn("Firebase 민원데이터 접근 권한 제한/오류 -> 로컬 저장소 사용:", error);
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    );
 
     return () => unsubscribe();
   }, []);
+
+  const saveToLocalStorage = (newList: ComplaintItem[]) => {
+    setComplaints(newList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newList));
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +85,9 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
       return;
     }
 
-    const newComplaint = {
+    const tempId = "local_" + Date.now();
+    const newComplaint: ComplaintItem = {
+      id: tempId,
       title: title.trim(),
       content: content.trim(),
       author: author.trim() || "익명",
@@ -68,20 +98,40 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
       replies: [],
     };
 
+    // Firebase 저장 시도
+    let savedToFirebase = false;
     try {
       const complaintsRef = ref(db, "complaints");
-      await push(complaintsRef, newComplaint);
-      // reset form
-      setTitle("");
-      setContent("");
-      setAuthor("");
-      setIsPrivate(false);
-      setPasscode("");
-      setIsWriteOpen(false);
+      const res = await push(complaintsRef, {
+        title: newComplaint.title,
+        content: newComplaint.content,
+        author: newComplaint.author,
+        isPrivate: newComplaint.isPrivate,
+        passcode: newComplaint.passcode,
+        createdAt: newComplaint.createdAt,
+        status: newComplaint.status,
+        replies: [],
+      });
+      if (res.key) {
+        savedToFirebase = true;
+      }
     } catch (err) {
-      console.error("민원 등록 실패:", err);
-      alert("민원 등록 중 오류가 발생했습니다.");
+      console.warn("Firebase 저장 권한 제한으로 인해 로컬 저장소에 저장합니다:", err);
     }
+
+    // Firebase 실패 시 local storage 저장
+    if (!savedToFirebase) {
+      const updated = [newComplaint, ...complaints];
+      saveToLocalStorage(updated);
+    }
+
+    // Reset Form
+    setTitle("");
+    setContent("");
+    setAuthor("");
+    setIsPrivate(false);
+    setPasscode("");
+    setIsWriteOpen(false);
   };
 
   const handleVerifyPasscode = (e: React.FormEvent) => {
@@ -129,7 +179,7 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
         </span>
       </div>
 
-      {loading ? (
+      {loading && complaints.length === 0 ? (
         <div className="py-12 text-center text-slate-400 font-bold">민원 데이터를 불러오는 중...</div>
       ) : complaints.length === 0 ? (
         <div className="bg-white rounded-3xl p-8 text-center border border-slate-100 shadow-sm space-y-2">
@@ -243,7 +293,7 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
               <h3 className="text-lg font-black text-slate-800">민원 작성하기</h3>
               <button
                 onClick={() => setIsWriteOpen(false)}
-                className="p-1 rounded-xl text-slate-400 hover:text-slate-700"
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -326,13 +376,13 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
                 <button
                   type="button"
                   onClick={() => setIsWriteOpen(false)}
-                  className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 rounded-2xl hover:bg-slate-200"
+                  className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 rounded-2xl hover:bg-slate-200 cursor-pointer"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 text-sm font-bold text-white bg-emerald-600 rounded-2xl hover:bg-emerald-700 shadow-md"
+                  className="flex-1 py-3 text-sm font-bold text-white bg-emerald-600 rounded-2xl hover:bg-emerald-700 shadow-md cursor-pointer"
                 >
                   등록 완료
                 </button>
@@ -378,13 +428,13 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
                 <button
                   type="button"
                   onClick={() => setSelectedComplaint(null)}
-                  className="flex-1 py-2.5 text-xs font-bold text-slate-500 bg-slate-100 rounded-xl"
+                  className="flex-1 py-2.5 text-xs font-bold text-slate-500 bg-slate-100 rounded-xl cursor-pointer"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 rounded-xl shadow-md"
+                  className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 rounded-xl shadow-md cursor-pointer"
                 >
                   확인
                 </button>

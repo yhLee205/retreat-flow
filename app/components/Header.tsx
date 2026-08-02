@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Menu, Sparkles } from "lucide-react";
 
 interface HeaderProps {
@@ -9,6 +10,12 @@ interface HeaderProps {
 }
 
 export default function Header({ currentTab, now, onOpenMenu }: HeaderProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const getTitle = () => {
     switch (currentTab) {
       case "schedule":
@@ -43,6 +50,10 @@ export default function Header({ currentTab, now, onOpenMenu }: HeaderProps) {
     }
   };
 
+  const timeString = mounted
+    ? now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "--:--:--";
+
   return (
     <header className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 pt-7 pb-16 px-6 rounded-b-[2.5rem] shadow-lg relative text-white">
       <div className="flex justify-between items-center max-w-md mx-auto">
@@ -56,8 +67,11 @@ export default function Header({ currentTab, now, onOpenMenu }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="text-xs font-mono font-bold text-white bg-white/15 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 shadow-inner tracking-wider">
-            {now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          <div
+            suppressHydrationWarning
+            className="text-xs font-mono font-bold text-white bg-white/15 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 shadow-inner tracking-wider"
+          >
+            {timeString}
           </div>
           <button
             onClick={onOpenMenu}

@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ComplaintItem, LectureQaItem } from "../types";
+import { ComplaintItem, LectureQaItem, MealDay, MealItem } from "../types";
+import defaultMealData from "@/meals.json";
 import { db } from "@/lib/firebase";
-import { ref, onValue, update, remove } from "firebase/database";
+import { ref, onValue, update, remove, set } from "firebase/database";
 import {
   Shield,
   Key,
   MessageSquare,
   HelpCircle,
+  Utensils,
   CheckCircle2,
   Lock,
   Trash2,
@@ -16,6 +18,8 @@ import {
   LogOut,
   AlertCircle,
   MessageSquareQuote,
+  Plus,
+  Save,
 } from "lucide-react";
 
 interface AdminViewProps {
@@ -27,11 +31,24 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
   const [adminCode, setAdminCode] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"complaints" | "lecture_qa">("complaints");
+  const [activeTab, setActiveTab] = useState<"complaints" | "lecture_qa" | "meals">("complaints");
 
   // Data
   const [complaints, setComplaints] = useState<ComplaintItem[]>([]);
   const [questions, setQuestions] = useState<LectureQaItem[]>([]);
+  const [mealDays, setMealDays] = useState<MealDay[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("retreat_meals");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    return defaultMealData.meals as MealDay[];
+  });
 
   // Reply state for complaints
   const [replyingId, setReplyingId] = useState<string | null>(null);
@@ -42,47 +59,80 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
   const [answeringQaId, setAnsweringQaId] = useState<string | null>(null);
   const [pastorAnswerText, setPastorAnswerText] = useState("");
 
+  // Meal edit state
+  const [selectedDayIdx, setSelectedDayIdx] = useState<number>(0);
+  const [mealSaveSuccess, setMealSaveSuccess] = useState(false);
+
   useEffect(() => {
     // Listen to Firebase RTDB for Admin management
     const complaintsRef = ref(db, "complaints");
-    const unsubscribeComplaints = onValue(complaintsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const list: ComplaintItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-          id,
-          ...value,
-        }));
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setComplaints(list);
-      } else {
-        setComplaints([]);
+    const unsubscribeComplaints = onValue(
+      complaintsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list: ComplaintItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
+            id,
+            ...value,
+          }));
+          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setComplaints(list);
+        }
+      },
+      () => {
+        if (typeof window !== "undefined") {
+          const saved = localStorage.getItem("retreat_complaints");
+          if (saved) setComplaints(JSON.parse(saved));
+        }
       }
-    });
+    );
 
     const qaRef = ref(db, "lecture_qa");
-    const unsubscribeQa = onValue(qaRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const list: LectureQaItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-          id,
-          ...value,
-        }));
-        list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-        setQuestions(list);
-      } else {
-        setQuestions([]);
+    const unsubscribeQa = onValue(
+      qaRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list: LectureQaItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
+            id,
+            ...value,
+          }));
+          list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+          setQuestions(list);
+        }
+      },
+      () => {
+        if (typeof window !== "undefined") {
+          const saved = localStorage.getItem("retreat_lecture_qa");
+          if (saved) setQuestions(JSON.parse(saved));
+        }
       }
-    });
+    );
+
+    const mealsRef = ref(db, "meals");
+    const unsubscribeMeals = onValue(
+      mealsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list = Array.isArray(data) ? data : Object.values(data);
+          setMealDays(list as MealDay[]);
+        }
+      },
+      () => {
+        // Fallback
+      }
+    );
 
     return () => {
       unsubscribeComplaints();
       unsubscribeQa();
+      unsubscribeMeals();
     };
   }, []);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Default admin passcode "2026"
     if (adminCode === "2026" || adminCode === "admin1234") {
       setIsAdminLoggedIn(true);
       setErrorMsg("");
@@ -94,10 +144,16 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
   // 민원 처리 상태 변경
   const handleToggleComplaintStatus = async (item: ComplaintItem) => {
     const nextStatus = item.status === "resolved" ? "pending" : "resolved";
+    const updatedList = complaints.map((c) => (c.id === item.id ? { ...c, status: nextStatus } : c));
+    setComplaints(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
+    }
+
     try {
       await update(ref(db, `complaints/${item.id}`), { status: nextStatus });
     } catch (err) {
-      console.error("상태 변경 오류:", err);
+      console.warn("Firebase 업데이트 실패 -> 로컬 저장소 적용:", err);
     }
   };
 
@@ -116,52 +172,127 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
     };
 
     const updatedReplies = [...(target.replies || []), newReply];
+    const updatedList = complaints.map((c) =>
+      c.id === complaintId ? { ...c, replies: updatedReplies, status: "resolved" as const } : c
+    );
+
+    setComplaints(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
+    }
 
     try {
       await update(ref(db, `complaints/${complaintId}`), {
         replies: updatedReplies,
-        status: "resolved", // 답변 작성 시 자동으로 처리 완료 변경
+        status: "resolved",
       });
-      setReplyingId(null);
-      setReplyText("");
     } catch (err) {
-      console.error("답변 작성 오류:", err);
+      console.warn("Firebase 답변 저장 실패 -> 로컬 적용:", err);
     }
+
+    setReplyingId(null);
+    setReplyText("");
   };
 
   // 민원 삭제
   const handleDeleteComplaint = async (id: string) => {
     if (!confirm("이 민원을 정말 삭제하시겠습니까?")) return;
+    const updatedList = complaints.filter((c) => c.id !== id);
+    setComplaints(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
+    }
+
     try {
       await remove(ref(db, `complaints/${id}`));
     } catch (err) {
-      console.error("삭제 오류:", err);
+      console.warn("Firebase 삭제 실패 -> 로컬 적용:", err);
     }
   };
 
   // 목사님 특강 Q&A 답변 기록
   const handleSavePastorAnswer = async (qaId: string) => {
     if (!pastorAnswerText.trim()) return;
+
+    const updatedQuestions = questions.map((q) =>
+      q.id === qaId
+        ? { ...q, pastorAnswer: pastorAnswerText.trim(), answeredAt: new Date().toISOString() }
+        : q
+    );
+
+    setQuestions(updatedQuestions);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedQuestions));
+    }
+
     try {
       await update(ref(db, `lecture_qa/${qaId}`), {
         pastorAnswer: pastorAnswerText.trim(),
         answeredAt: new Date().toISOString(),
       });
-      setAnsweringQaId(null);
-      setPastorAnswerText("");
     } catch (err) {
-      console.error("Q&A 답변 저장 오류:", err);
+      console.warn("Firebase 저장 실패 -> 로컬 저장소 저장:", err);
     }
+
+    setAnsweringQaId(null);
+    setPastorAnswerText("");
   };
 
   // 특강 Q&A 삭제
   const handleDeleteQa = async (id: string) => {
     if (!confirm("이 질문을 삭제하시겠습니까?")) return;
+    const updatedList = questions.filter((q) => q.id !== id);
+    setQuestions(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
+    }
+
     try {
       await remove(ref(db, `lecture_qa/${id}`));
     } catch (err) {
-      console.error("삭제 오류:", err);
+      console.warn("Firebase 삭제 실패 -> 로컬 저장소 저장:", err);
     }
+  };
+
+  // 식단표 편집 핸들러
+  const handleUpdateMealItem = (dayIdx: number, itemIdx: number, field: keyof MealItem, value: string) => {
+    const newMealDays = [...mealDays];
+    const newItems = [...newMealDays[dayIdx].items];
+    newItems[itemIdx] = { ...newItems[itemIdx], [field]: value };
+    newMealDays[dayIdx] = { ...newMealDays[dayIdx], items: newItems };
+    setMealDays(newMealDays);
+  };
+
+  const handleAddMealItem = (dayIdx: number) => {
+    const newMealDays = [...mealDays];
+    const newItems = [
+      ...newMealDays[dayIdx].items,
+      { type: "점심", time: "12:00 - 13:00", menu: "새로운 식단 메뉴", highlight: "" },
+    ];
+    newMealDays[dayIdx] = { ...newMealDays[dayIdx], items: newItems };
+    setMealDays(newMealDays);
+  };
+
+  const handleDeleteMealItem = (dayIdx: number, itemIdx: number) => {
+    const newMealDays = [...mealDays];
+    const newItems = newMealDays[dayIdx].items.filter((_, idx) => idx !== itemIdx);
+    newMealDays[dayIdx] = { ...newMealDays[dayIdx], items: newItems };
+    setMealDays(newMealDays);
+  };
+
+  const handleSaveMeals = async () => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_meals", JSON.stringify(mealDays));
+    }
+
+    try {
+      await set(ref(db, "meals"), mealDays);
+    } catch (err) {
+      console.warn("Firebase 식단표 저장 오류 -> 로컬 저장소만 저장됨:", err);
+    }
+
+    setMealSaveSuccess(true);
+    setTimeout(() => setMealSaveSuccess(false), 3000);
   };
 
   // 1. 관리자 로그인 페이지
@@ -230,7 +361,7 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
             ADMIN MODE
           </span>
           <h2 className="text-xl font-black mt-1">수련회 운영/관리</h2>
-          <p className="text-xs text-slate-400 font-medium">실시간 민원 답변 & 특강 질문 정리</p>
+          <p className="text-xs text-slate-400 font-medium">민원 처리 & Q&A & 식단표 수정</p>
         </div>
         <button
           onClick={() => setIsAdminLoggedIn(false)}
@@ -241,30 +372,42 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
         </button>
       </div>
 
-      {/* 탭 버튼 (임원24 민원 vs 특강Q&A) */}
-      <div className="flex bg-slate-200 p-1.5 rounded-2xl gap-1.5">
+      {/* 탭 버튼 (민원 / Q&A / 식단표) */}
+      <div className="flex bg-slate-200 p-1.5 rounded-2xl gap-1">
         <button
           onClick={() => setActiveTab("complaints")}
-          className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer ${
             activeTab === "complaints"
               ? "bg-white text-emerald-900 shadow-md"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <MessageSquare className="w-4 h-4 text-emerald-600" />
-          임원24 민원 ({complaints.length})
+          <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+          민원 ({complaints.length})
         </button>
 
         <button
           onClick={() => setActiveTab("lecture_qa")}
-          className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer ${
             activeTab === "lecture_qa"
               ? "bg-white text-purple-900 shadow-md"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <HelpCircle className="w-4 h-4 text-purple-600" />
-          특강 Q&A ({questions.length})
+          <HelpCircle className="w-3.5 h-3.5 text-purple-600" />
+          Q&A ({questions.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab("meals")}
+          className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer ${
+            activeTab === "meals"
+              ? "bg-white text-amber-900 shadow-md"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Utensils className="w-3.5 h-3.5 text-amber-600" />
+          식단표 수정
         </button>
       </div>
 
@@ -306,7 +449,7 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
                   </div>
                   <button
                     onClick={() => handleDeleteComplaint(item.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -358,13 +501,13 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
                     <div className="flex gap-2 justify-end">
                       <button
                         onClick={() => setReplyingId(null)}
-                        className="px-3 py-1 text-xs text-slate-500 font-bold bg-slate-200 rounded-lg"
+                        className="px-3 py-1 text-xs text-slate-500 font-bold bg-slate-200 rounded-lg cursor-pointer"
                       >
                         취소
                       </button>
                       <button
                         onClick={() => handleAddReply(item.id)}
-                        className="px-3 py-1 text-xs text-white font-bold bg-emerald-600 rounded-lg flex items-center gap-1 shadow-sm"
+                        className="px-3 py-1 text-xs text-white font-bold bg-emerald-600 rounded-lg flex items-center gap-1 shadow-sm cursor-pointer"
                       >
                         <Send className="w-3 h-3" />
                         답변 등록
@@ -408,7 +551,7 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
                   </span>
                   <button
                     onClick={() => handleDeleteQa(item.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -443,13 +586,13 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
                     <div className="flex gap-2 justify-end">
                       <button
                         onClick={() => setAnsweringQaId(null)}
-                        className="px-3 py-1 text-xs font-bold text-slate-500 bg-slate-200 rounded-lg"
+                        className="px-3 py-1 text-xs font-bold text-slate-500 bg-slate-200 rounded-lg cursor-pointer"
                       >
                         취소
                       </button>
                       <button
                         onClick={() => handleSavePastorAnswer(item.id)}
-                        className="px-3 py-1 text-xs font-bold text-white bg-purple-700 rounded-lg shadow-sm"
+                        className="px-3 py-1 text-xs font-bold text-white bg-purple-700 rounded-lg shadow-sm cursor-pointer"
                       >
                         답변 저장
                       </button>
@@ -468,6 +611,136 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
                 )}
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {/* 탭 3: 식단표 관리 */}
+      {activeTab === "meals" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center px-1">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+              수련회 식단표 편집기
+            </h3>
+            <button
+              onClick={handleSaveMeals}
+              className="px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md hover:bg-amber-700 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" />
+              식단표 저장
+            </button>
+          </div>
+
+          {mealSaveSuccess && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-amber-600" />
+              식단표가 성공적으로 저장되었습니다!
+            </div>
+          )}
+
+          {/* 일자 선택 탭 */}
+          <div className="flex bg-slate-200 p-1 rounded-xl gap-1">
+            {mealDays.map((day, idx) => (
+              <button
+                key={idx}
+                onClick={() => setSelectedDayIdx(idx)}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  selectedDayIdx === idx ? "bg-white text-slate-800 shadow-sm" : "text-slate-600"
+                }`}
+              >
+                {day.dayLabel}
+              </button>
+            ))}
+          </div>
+
+          {/* 선택된 날짜 식단 수정 폼 */}
+          {mealDays[selectedDayIdx] && (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h4 className="font-extrabold text-slate-800 text-sm">
+                  {mealDays[selectedDayIdx].dayLabel} ({mealDays[selectedDayIdx].date}) 식단 항목
+                </h4>
+                <button
+                  onClick={() => handleAddMealItem(selectedDayIdx)}
+                  className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-slate-200 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  식사 항목 추가
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {mealDays[selectedDayIdx].items.map((meal, itemIdx) => (
+                  <div
+                    key={itemIdx}
+                    className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 relative"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex gap-2 w-full max-w-[240px]">
+                        <select
+                          value={meal.type}
+                          onChange={(e) =>
+                            handleUpdateMealItem(selectedDayIdx, itemIdx, "type", e.target.value)
+                          }
+                          className="px-2.5 py-1 text-xs font-bold bg-white border border-slate-300 rounded-xl"
+                        >
+                          <option value="아침">아침</option>
+                          <option value="점심">점심</option>
+                          <option value="저녁">저녁</option>
+                          <option value="야식">야식</option>
+                          <option value="간식">간식</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="시간 (예: 08:00 - 09:00)"
+                          value={meal.time}
+                          onChange={(e) =>
+                            handleUpdateMealItem(selectedDayIdx, itemIdx, "time", e.target.value)
+                          }
+                          className="px-2.5 py-1 text-xs bg-white border border-slate-300 rounded-xl font-bold flex-1"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMealItem(selectedDayIdx, itemIdx)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                        식단 메뉴 목록
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="메뉴 항목 (쉼표로 구분)"
+                        value={meal.menu}
+                        onChange={(e) =>
+                          handleUpdateMealItem(selectedDayIdx, itemIdx, "menu", e.target.value)
+                        }
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-indigo-600 mb-0.5">
+                        특식 / 하이라이트 태그 (선택)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="예: 웰컴 바비큐 정식, 🔥 BBQ 파티"
+                        value={meal.highlight || ""}
+                        onChange={(e) =>
+                          handleUpdateMealItem(selectedDayIdx, itemIdx, "highlight", e.target.value)
+                        }
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl text-indigo-700 font-bold"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}

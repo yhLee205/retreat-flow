@@ -6,8 +6,22 @@ import { db } from "@/lib/firebase";
 import { ref, onValue, push, update } from "firebase/database";
 import { HelpCircle, ThumbsUp, Plus, X, CheckCircle, MessageSquareQuote, Sparkles } from "lucide-react";
 
+const LOCAL_STORAGE_KEY = "retreat_lecture_qa";
+
 export default function LectureQaView() {
-  const [questions, setQuestions] = useState<LectureQaItem[]>([]);
+  const [questions, setQuestions] = useState<LectureQaItem[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    return [];
+  });
   const [loading, setLoading] = useState(true);
 
   // 작성 Modal State
@@ -19,30 +33,46 @@ export default function LectureQaView() {
 
   useEffect(() => {
     const qaRef = ref(db, "lecture_qa");
-    const unsubscribe = onValue(qaRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const list: LectureQaItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-          id,
-          ...value,
-        }));
-        // 공감(좋아요) 수 및 생성시간 순 정렬
-        list.sort((a, b) => b.likes - a.likes || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setQuestions(list);
-      } else {
-        setQuestions([]);
+    const unsubscribe = onValue(
+      qaRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list: LectureQaItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
+            id,
+            ...value,
+          }));
+          list.sort((a, b) => b.likes - a.likes || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setQuestions(list);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list));
+          }
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.warn("Firebase 특강 Q&A 로드 오류 -> 로컬 저장소 사용:", error);
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    );
 
     return () => unsubscribe();
   }, []);
+
+  const saveToLocalStorage = (newList: LectureQaItem[]) => {
+    setQuestions(newList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newList));
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
 
-    const newQa = {
+    const tempId = "qa_" + Date.now();
+    const newQa: LectureQaItem = {
+      id: tempId,
       question: question.trim(),
       author: author.trim() || "익명 청년",
       lectureTitle: lectureTitle.trim() || "특강 / 집회",
@@ -50,28 +80,45 @@ export default function LectureQaView() {
       createdAt: new Date().toISOString(),
     };
 
+    let savedToFirebase = false;
     try {
       const qaRef = ref(db, "lecture_qa");
-      await push(qaRef, newQa);
-      setQuestion("");
-      setAuthor("");
-      setLectureTitle("");
-      setIsWriteOpen(false);
+      const res = await push(qaRef, {
+        question: newQa.question,
+        author: newQa.author,
+        lectureTitle: newQa.lectureTitle,
+        likes: newQa.likes,
+        createdAt: newQa.createdAt,
+      });
+      if (res.key) savedToFirebase = true;
     } catch (err) {
-      console.error("질문 등록 오류:", err);
-      alert("질문 등록 중 오류가 발생했습니다.");
+      console.warn("Firebase 저장 실패 -> 로컬 저장소에 추가:", err);
     }
+
+    if (!savedToFirebase) {
+      const updated = [newQa, ...questions];
+      saveToLocalStorage(updated);
+    }
+
+    setQuestion("");
+    setAuthor("");
+    setLectureTitle("");
+    setIsWriteOpen(false);
   };
 
   const handleLike = async (item: LectureQaItem) => {
-    if (likedIds[item.id]) return; // 이미 공감함
+    if (likedIds[item.id]) return;
+
+    const updatedLikes = (item.likes || 0) + 1;
+    setLikedIds((prev) => ({ ...prev, [item.id]: true }));
 
     try {
       const itemRef = ref(db, `lecture_qa/${item.id}`);
-      await update(itemRef, { likes: (item.likes || 0) + 1 });
-      setLikedIds((prev) => ({ ...prev, [item.id]: true }));
+      await update(itemRef, { likes: updatedLikes });
     } catch (err) {
-      console.error("좋아요 오류:", err);
+      console.warn("Firebase 좋아요 업데이트 실패 -> 로컬 상태 업데이트:", err);
+      const updatedList = questions.map((q) => (q.id === item.id ? { ...q, likes: updatedLikes } : q));
+      saveToLocalStorage(updatedList);
     }
   };
 
@@ -107,7 +154,7 @@ export default function LectureQaView() {
         </span>
       </div>
 
-      {loading ? (
+      {loading && questions.length === 0 ? (
         <div className="py-12 text-center text-slate-400 font-bold">질문 목록을 로딩 중입니다...</div>
       ) : questions.length === 0 ? (
         <div className="bg-white rounded-3xl p-8 text-center border border-slate-100 shadow-sm space-y-2">
@@ -202,7 +249,7 @@ export default function LectureQaView() {
               <h3 className="text-lg font-black text-slate-800">특강 질문 남기기</h3>
               <button
                 onClick={() => setIsWriteOpen(false)}
-                className="p-1 rounded-xl text-slate-400 hover:text-slate-700"
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -247,13 +294,13 @@ export default function LectureQaView() {
                 <button
                   type="button"
                   onClick={() => setIsWriteOpen(false)}
-                  className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 rounded-2xl hover:bg-slate-200"
+                  className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 rounded-2xl hover:bg-slate-200 cursor-pointer"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 text-sm font-bold text-white bg-purple-700 rounded-2xl hover:bg-purple-800 shadow-md"
+                  className="flex-1 py-3 text-sm font-bold text-white bg-purple-700 rounded-2xl hover:bg-purple-800 shadow-md cursor-pointer"
                 >
                   질문 제출
                 </button>

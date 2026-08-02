@@ -6,14 +6,23 @@ import { ref, onValue } from "firebase/database";
 
 import defaultScheduleData from "@/schedule.json";
 
+// 일정 데이터 아이템 타입 정의
+interface ScheduleItem {
+  date: string;
+  startTime: string;
+  endTime: string;
+  title: string;
+  [key: string]: any;
+}
+
 export default function Home() {
-  const defaultList = (defaultScheduleData.schedules || []).sort((a: any, b: any) => {
+  const defaultList: ScheduleItem[] = ((defaultScheduleData.schedules || []) as ScheduleItem[]).sort((a, b) => {
     const timeA = new Date(`${a.date}T${a.startTime}:00`).getTime();
     const timeB = new Date(`${b.date}T${b.startTime}:00`).getTime();
     return timeA - timeB;
   });
 
-  const [schedules, setSchedules] = useState<any[]>(defaultList);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>(defaultList);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
 
@@ -29,9 +38,9 @@ export default function Home() {
         clearTimeout(fallbackTimeout);
         const data = snapshot.val();
         if (data) {
-          const list = Array.isArray(data) ? data : Object.values(data);
+          const list: ScheduleItem[] = Array.isArray(data) ? data : Object.values(data);
           setSchedules(
-            list.sort((a: any, b: any) => {
+            list.sort((a, b) => {
               const timeA = new Date(`${a.date}T${a.startTime}:00`).getTime();
               const timeB = new Date(`${b.date}T${b.startTime}:00`).getTime();
               return timeA - timeB;
@@ -69,7 +78,7 @@ export default function Home() {
   });
 
   // 진행도(%)
-  const getProgress = (item: any) => {
+  const getProgress = (item: ScheduleItem) => {
     if (!item) return 0;
     const start = new Date(`${item.date}T${item.startTime}:00`).getTime();
     const end = new Date(`${item.date}T${item.endTime}:00`).getTime();
@@ -96,7 +105,7 @@ export default function Home() {
     if (!acc[curr.date]) acc[curr.date] = [];
     acc[curr.date].push(curr);
     return acc;
-  }, {} as Record<string, any[]>);
+  }, {} as Record<string, ScheduleItem[]>);
 
   if (loading && schedules.length === 0) return <div className="p-10 text-center font-bold text-slate-500">로딩 중...</div>;
 
@@ -116,7 +125,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 대시보드 (하얀색 카드로 롤백) */}
+      {/* 대시보드 */}
       <section className="max-w-md mx-auto px-5 -mt-12 space-y-4 relative z-10">
         
         {/* 현재 진행 중 카드 */}
@@ -150,7 +159,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* 다음 일정 카드 (까만색 삭제 -> 하얀색 깔끔한 디자인으로 복구) */}
+        {/* 다음 일정 카드 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
           <div className="flex justify-between items-center mb-2">
             <span className="text-[10px] font-black px-2 py-1 bg-slate-100 rounded-md text-slate-500">NEXT</span>
@@ -183,7 +192,7 @@ export default function Home() {
               </h2>
               
               <div className="space-y-3">
-                {items.map((item, idx) => {
+                {(items as ScheduleItem[]).map((item, idx) => {
                   const isNow = currentItem === item;
                   const isPast = new Date(`${item.date}T${item.endTime}:00`).getTime() <= nowMs;
 

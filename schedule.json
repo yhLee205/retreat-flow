@@ -1,0 +1,144 @@
+{
+  "schedules": [
+    {
+      "date": "2026-08-16",
+      "startTime": "14:00",
+      "endTime": "15:00",
+      "title": "청년부 예배",
+      "note": ""
+    },
+    {
+      "date": "2026-08-16",
+      "startTime": "14:00",
+      "endTime": "15:00",
+      "title": "청년부 예배",
+      "note": ""
+    },
+    {
+      "date": "2026-08-16",
+      "startTime": "14:00",
+      "endTime": "15:00",
+      "title": "청년부 예배",
+      "note": ""
+    },
+    {
+      "date": "2026-08-16",
+      "startTime": "15:00",
+      "endTime": "17:00",
+      "title": "이동",
+      "note": ""
+    },
+    {
+      "date": "2026-08-16",
+      "startTime": "17:00",
+      "endTime": "18:00",
+      "title": "이동",
+      "note": ""
+    },
+    {
+      "date": "2026-08-16",
+      "startTime": "18:00",
+      "endTime": "19:30",
+      "title": "저녁식사",
+      "note": ""
+    },
+    {
+      "date": "2026-08-16",
+      "startTime": "19:30",
+      "endTime": "23:00",
+      "title": "특강 및 기도회",
+      "note": ""
+    },
+    {
+      "date": "2026-08-16",
+      "startTime": "23:00",
+      "endTime": "24:00",
+      "title": "야식",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "08:00",
+      "endTime": "09:30",
+      "title": "기상, 식사, 개인정비",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "09:30",
+      "endTime": "10:00",
+      "title": "아침운동",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "10:00",
+      "endTime": "12:00",
+      "title": "특강",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "12:00",
+      "endTime": "13:00",
+      "title": "점심식사",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "13:00",
+      "endTime": "18:00",
+      "title": "레크 및 물놀이",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "18:00",
+      "endTime": "20:00",
+      "title": "BBQ 파티",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "20:00",
+      "endTime": "21:30",
+      "title": "공동체 활동 및 조별나눔",
+      "note": ""
+    },
+    {
+      "date": "2026-08-17",
+      "startTime": "21:30",
+      "endTime": "24:00",
+      "title": "자유 시간",
+      "note": ""
+    },
+    {
+      "date": "2026-08-18",
+      "startTime": "08:00",
+      "endTime": "08:30",
+      "title": "아침식사",
+      "note": ""
+    },
+    {
+      "date": "2026-08-18",
+      "startTime": "08:30",
+      "endTime": "09:00",
+      "title": "숙소 및 강당 정리",
+      "note": ""
+    },
+    {
+      "date": "2026-08-18",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "title": "폐회예배",
+      "note": ""
+    },
+    {
+      "date": "2026-08-18",
+      "startTime": "09:30",
+      "endTime": "17:30",
+      "title": "에버랜드",
+      "note": ""
+    }
+  ]
+}

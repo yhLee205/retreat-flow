@@ -143,7 +143,7 @@ export default function AdminView({ isAdminLoggedIn, setIsAdminLoggedIn }: Admin
 
   // 민원 처리 상태 변경
   const handleToggleComplaintStatus = async (item: ComplaintItem) => {
-    const nextStatus = item.status === "resolved" ? "pending" : "resolved";
+    const nextStatus: "pending" | "resolved" = item.status === "resolved" ? "pending" : "resolved";
     const updatedList = complaints.map((c) => (c.id === item.id ? { ...c, status: nextStatus } : c));
     setComplaints(updatedList);
     if (typeof window !== "undefined") {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ComplaintItem, LectureQaItem, MealDay, MealItem } from "../types";
+import GoldenTicketModal from "./GoldenTicketModal";
 import {
   Shield,
   Key,
@@ -45,6 +46,7 @@ export default function AdminView({
 }: AdminViewProps) {
   const [adminCode, setAdminCode] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [isGoldenTicketOpen, setIsGoldenTicketOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"complaints" | "lecture_qa" | "meals">("complaints");
 
@@ -64,7 +66,16 @@ export default function AdminView({
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminCode.trim() === "s5jh" || adminCode.trim() === "2026") {
+    const code = adminCode.trim().toLowerCase();
+
+    // 이스터에그 / 레크리에이션 골든티켓 코드 입력 시
+    if (code === "rec2") {
+      setIsGoldenTicketOpen(true);
+      setErrorMsg("");
+      return;
+    }
+
+    if (code === "s5jh" || code === "2026") {
       setIsAdminLoggedIn(true);
       setErrorMsg("");
     } else {
@@ -217,6 +228,12 @@ export default function AdminView({
             </button>
           </form>
         </div>
+
+        {/* 찰리와 초콜릿 공장 골든티켓 추첨 모달 */}
+        <GoldenTicketModal
+          isOpen={isGoldenTicketOpen}
+          onClose={() => setIsGoldenTicketOpen(false)}
+        />
       </div>
     );
   }
@@ -665,6 +682,12 @@ export default function AdminView({
           )}
         </div>
       )}
+
+      {/* 찰리와 초콜릿 공장 골든티켓 추첨 모달 */}
+      <GoldenTicketModal
+        isOpen={isGoldenTicketOpen}
+        onClose={() => setIsGoldenTicketOpen(false)}
+      />
     </div>
   );
 }

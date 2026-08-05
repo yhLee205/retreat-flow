@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, push, set } from "firebase/database";
 import defaultScheduleData from "@/schedule.json";
-import { ScheduleItem } from "./types";
+import defaultMealData from "@/meals.json";
+import { ScheduleItem, MealDay, ComplaintItem, LectureQaItem } from "./types";
 
 import Header from "./components/Header";
 import DrawerMenu from "./components/DrawerMenu";
@@ -26,7 +27,6 @@ export default function Home() {
   });
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>(defaultList);
-  const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
 
   // Navigation state
@@ -34,9 +34,48 @@ export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
 
+  // Central States
+  const [mealDays, setMealDays] = useState<MealDay[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("retreat_meals");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    return defaultMealData.meals as MealDay[];
+  });
+
+  const [complaints, setComplaints] = useState<ComplaintItem[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("retreat_complaints");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    return [];
+  });
+
+  const [questions, setQuestions] = useState<LectureQaItem[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("retreat_lecture_qa");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    return [];
+  });
+
+  // Sync with Firebase RTDB
   useEffect(() => {
+    // 1. Schedules
     const scheduleRef = ref(db, "schedules");
-    const unsubscribe = onValue(
+    const unsubSchedule = onValue(
       scheduleRef,
       (snapshot) => {
         const data = snapshot.val();
@@ -50,36 +89,264 @@ export default function Home() {
             })
           );
         }
-        setLoading(false);
       },
-      (error) => {
-        console.warn("Firebase 일정 데이터를 가져오는 중 기본 schedule.json을 사용합니다:", error);
-        setLoading(false);
-      }
+      (error) => console.warn("Firebase Schedules Permission Warning:", error)
+    );
+
+    // 2. Meals
+    const mealsRef = ref(db, "meals");
+    const unsubMeals = onValue(
+      mealsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list = Array.isArray(data) ? data : Object.values(data);
+          setMealDays(list as MealDay[]);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_meals", JSON.stringify(list));
+          }
+        }
+      },
+      (error) => console.warn("Firebase Meals Permission Warning:", error)
+    );
+
+    // 3. Complaints
+    const complaintsRef = ref(db, "complaints");
+    const unsubComplaints = onValue(
+      complaintsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list: ComplaintItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
+            id,
+            ...value,
+          }));
+          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setComplaints(list);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_complaints", JSON.stringify(list));
+          }
+        }
+      },
+      (error) => console.warn("Firebase Complaints Permission Warning:", error)
+    );
+
+    // 4. Questions
+    const qaRef = ref(db, "lecture_qa");
+    const unsubQa = onValue(
+      qaRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const list: LectureQaItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
+            id,
+            ...value,
+          }));
+          list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+          setQuestions(list);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_lecture_qa", JSON.stringify(list));
+          }
+        }
+      },
+      (error) => console.warn("Firebase Q&A Permission Warning:", error)
     );
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => {
-      unsubscribe();
+      unsubSchedule();
+      unsubMeals();
+      unsubComplaints();
+      unsubQa();
       clearInterval(timer);
     };
   }, []);
+
+  // --- Handlers ---
+
+  // Update Meals
+  const handleUpdateMeals = async (newMeals: MealDay[]) => {
+    setMealDays(newMeals);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_meals", JSON.stringify(newMeals));
+    }
+    try {
+      await set(ref(db, "meals"), newMeals);
+    } catch (err) {
+      console.warn("Firebase 식단표 저장 시도 실패 -> 로컬 저장소 적용:", err);
+    }
+  };
+
+  // Add Complaint
+  const handleAddComplaint = async (
+    data: Omit<ComplaintItem, "id" | "createdAt" | "status" | "replies">
+  ) => {
+    const newItem: ComplaintItem = {
+      id: "cp_" + Date.now(),
+      ...data,
+      createdAt: new Date().toISOString(),
+      status: "pending",
+      replies: [],
+    };
+
+    const updatedList = [newItem, ...complaints];
+    setComplaints(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
+    }
+
+    try {
+      const complaintsRef = ref(db, "complaints");
+      const pushRef = push(complaintsRef);
+      await set(pushRef, {
+        title: newItem.title,
+        content: newItem.content,
+        author: newItem.author,
+        isPrivate: newItem.isPrivate,
+        passcode: newItem.passcode,
+        createdAt: newItem.createdAt,
+        status: newItem.status,
+        replies: [],
+      });
+    } catch (err) {
+      console.warn("Firebase 민원 등록 실패 -> 로컬 저장소 저장 완료:", err);
+    }
+  };
+
+  // Update Complaints (Admin replies, status change, delete)
+  const handleUpdateComplaints = async (updatedList: ComplaintItem[]) => {
+    setComplaints(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
+    }
+
+    // Convert array to object for Firebase set if needed
+    const firebaseObj: Record<string, any> = {};
+    updatedList.forEach((item) => {
+      firebaseObj[item.id] = {
+        title: item.title,
+        content: item.content,
+        author: item.author || "익명",
+        isPrivate: item.isPrivate,
+        passcode: item.passcode || "",
+        createdAt: item.createdAt,
+        status: item.status,
+        replies: item.replies || [],
+      };
+    });
+
+    try {
+      await set(ref(db, "complaints"), firebaseObj);
+    } catch (err) {
+      console.warn("Firebase 민원 업데이트 실패 -> 로컬 적용 완료:", err);
+    }
+  };
+
+  // Add Question
+  const handleAddQuestion = async (
+    data: Omit<LectureQaItem, "id" | "likes" | "createdAt">
+  ) => {
+    const newItem: LectureQaItem = {
+      id: "qa_" + Date.now(),
+      ...data,
+      likes: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedList = [newItem, ...questions];
+    setQuestions(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
+    }
+
+    try {
+      const qaRef = ref(db, "lecture_qa");
+      const pushRef = push(qaRef);
+      await set(pushRef, {
+        question: newItem.question,
+        author: newItem.author,
+        lectureTitle: newItem.lectureTitle,
+        likes: newItem.likes,
+        createdAt: newItem.createdAt,
+      });
+    } catch (err) {
+      console.warn("Firebase 질문 등록 실패 -> 로컬 저장 완료:", err);
+    }
+  };
+
+  // Like Question
+  const handleLikeQuestion = async (item: LectureQaItem) => {
+    const updatedList = questions.map((q) =>
+      q.id === item.id ? { ...q, likes: (q.likes || 0) + 1 } : q
+    );
+    setQuestions(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
+    }
+
+    try {
+      const firebaseObj: Record<string, any> = {};
+      updatedList.forEach((q) => {
+        firebaseObj[q.id] = q;
+      });
+      await set(ref(db, "lecture_qa"), firebaseObj);
+    } catch (err) {
+      console.warn("Firebase 좋아요 저장 실패 -> 로컬 저장 완료:", err);
+    }
+  };
+
+  // Update Questions (Admin Pastor Answer, Delete)
+  const handleUpdateQuestions = async (updatedList: LectureQaItem[]) => {
+    setQuestions(updatedList);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
+    }
+
+    const firebaseObj: Record<string, any> = {};
+    updatedList.forEach((q) => {
+      firebaseObj[q.id] = q;
+    });
+
+    try {
+      await set(ref(db, "lecture_qa"), firebaseObj);
+    } catch (err) {
+      console.warn("Firebase 질문 목록 업데이트 실패 -> 로컬 적용 완료:", err);
+    }
+  };
 
   const renderActiveView = () => {
     switch (currentTab) {
       case "schedule":
         return <ScheduleView schedules={schedules} now={now} />;
       case "meals":
-        return <MealView />;
+        return <MealView mealDays={mealDays} />;
       case "complaints":
-        return <ComplaintsView isAdminLoggedIn={isAdminLoggedIn} />;
+        return (
+          <ComplaintsView
+            complaints={complaints}
+            onAddComplaint={handleAddComplaint}
+            isAdminLoggedIn={isAdminLoggedIn}
+          />
+        );
       case "lecture_qa":
-        return <LectureQaView />;
+        return (
+          <LectureQaView
+            questions={questions}
+            onAddQuestion={handleAddQuestion}
+            onLikeQuestion={handleLikeQuestion}
+          />
+        );
       case "admin":
         return (
           <AdminView
             isAdminLoggedIn={isAdminLoggedIn}
             setIsAdminLoggedIn={setIsAdminLoggedIn}
+            complaints={complaints}
+            questions={questions}
+            mealDays={mealDays}
+            onUpdateComplaints={handleUpdateComplaints}
+            onUpdateQuestions={handleUpdateQuestions}
+            onUpdateMeals={handleUpdateMeals}
           />
         );
       default:
@@ -97,7 +364,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24 relative overflow-x-hidden">
-      {/* 상단 파란색 헤더 */}
+      {/* 상단 헤더 */}
       <Header
         currentTab={currentTab}
         now={now}

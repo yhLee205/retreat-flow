@@ -1,33 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ComplaintItem } from "../types";
-import { db } from "@/lib/firebase";
-import { ref, onValue, push } from "firebase/database";
 import { Lock, Unlock, Plus, X, MessageSquare, CheckCircle2, ShieldCheck, Key, AlertCircle } from "lucide-react";
 
 interface ComplaintsViewProps {
+  complaints: ComplaintItem[];
+  onAddComplaint: (newComplaint: Omit<ComplaintItem, "id" | "createdAt" | "status" | "replies">) => void;
   isAdminLoggedIn: boolean;
 }
 
-const LOCAL_STORAGE_KEY = "retreat_complaints";
-
-export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps) {
-  const [complaints, setComplaints] = useState<ComplaintItem[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    }
-    return [];
-  });
-  const [loading, setLoading] = useState(true);
-
+export default function ComplaintsView({
+  complaints,
+  onAddComplaint,
+  isAdminLoggedIn,
+}: ComplaintsViewProps) {
   // 작성 모달 State
   const [isWriteOpen, setIsWriteOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -42,42 +29,7 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
   const [unlockedIds, setUnlockedIds] = useState<Record<string, boolean>>({});
   const [passcodeError, setPasscodeError] = useState("");
 
-  useEffect(() => {
-    const complaintsRef = ref(db, "complaints");
-    const unsubscribe = onValue(
-      complaintsRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const list: ComplaintItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-            id,
-            ...value,
-          }));
-          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setComplaints(list);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list));
-          }
-        }
-        setLoading(false);
-      },
-      (error) => {
-        console.warn("Firebase 민원데이터 접근 권한 제한/오류 -> 로컬 저장소 사용:", error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  const saveToLocalStorage = (newList: ComplaintItem[]) => {
-    setComplaints(newList);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newList));
-    }
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
     if (isPrivate && (!passcode || passcode.length < 4)) {
@@ -85,45 +37,13 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
       return;
     }
 
-    const tempId = "local_" + Date.now();
-    const newComplaint: ComplaintItem = {
-      id: tempId,
+    onAddComplaint({
       title: title.trim(),
       content: content.trim(),
       author: author.trim() || "익명",
       isPrivate,
       passcode: isPrivate ? passcode.trim() : "",
-      createdAt: new Date().toISOString(),
-      status: "pending",
-      replies: [],
-    };
-
-    // Firebase 저장 시도
-    let savedToFirebase = false;
-    try {
-      const complaintsRef = ref(db, "complaints");
-      const res = await push(complaintsRef, {
-        title: newComplaint.title,
-        content: newComplaint.content,
-        author: newComplaint.author,
-        isPrivate: newComplaint.isPrivate,
-        passcode: newComplaint.passcode,
-        createdAt: newComplaint.createdAt,
-        status: newComplaint.status,
-        replies: [],
-      });
-      if (res.key) {
-        savedToFirebase = true;
-      }
-    } catch (err) {
-      console.warn("Firebase 저장 권한 제한으로 인해 로컬 저장소에 저장합니다:", err);
-    }
-
-    // Firebase 실패 시 local storage 저장
-    if (!savedToFirebase) {
-      const updated = [newComplaint, ...complaints];
-      saveToLocalStorage(updated);
-    }
+    });
 
     // Reset Form
     setTitle("");
@@ -179,9 +99,7 @@ export default function ComplaintsView({ isAdminLoggedIn }: ComplaintsViewProps)
         </span>
       </div>
 
-      {loading && complaints.length === 0 ? (
-        <div className="py-12 text-center text-slate-400 font-bold">민원 데이터를 불러오는 중...</div>
-      ) : complaints.length === 0 ? (
+      {complaints.length === 0 ? (
         <div className="bg-white rounded-3xl p-8 text-center border border-slate-100 shadow-sm space-y-2">
           <MessageSquare className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="text-slate-600 font-bold text-sm">아직 등록된 민원이 없습니다</p>

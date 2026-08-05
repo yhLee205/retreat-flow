@@ -1,29 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { LectureQaItem } from "../types";
-import { db } from "@/lib/firebase";
-import { ref, onValue, push, update } from "firebase/database";
 import { HelpCircle, ThumbsUp, Plus, X, CheckCircle, MessageSquareQuote, Sparkles } from "lucide-react";
 
-const LOCAL_STORAGE_KEY = "retreat_lecture_qa";
+interface LectureQaViewProps {
+  questions: LectureQaItem[];
+  onAddQuestion: (newQa: Omit<LectureQaItem, "id" | "likes" | "createdAt">) => void;
+  onLikeQuestion: (item: LectureQaItem) => void;
+}
 
-export default function LectureQaView() {
-  const [questions, setQuestions] = useState<LectureQaItem[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    }
-    return [];
-  });
-  const [loading, setLoading] = useState(true);
-
+export default function LectureQaView({
+  questions,
+  onAddQuestion,
+  onLikeQuestion,
+}: LectureQaViewProps) {
   // 작성 Modal State
   const [isWriteOpen, setIsWriteOpen] = useState(false);
   const [question, setQuestion] = useState("");
@@ -31,74 +22,15 @@ export default function LectureQaView() {
   const [lectureTitle, setLectureTitle] = useState("");
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    const qaRef = ref(db, "lecture_qa");
-    const unsubscribe = onValue(
-      qaRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const list: LectureQaItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-            id,
-            ...value,
-          }));
-          list.sort((a, b) => b.likes - a.likes || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setQuestions(list);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list));
-          }
-        }
-        setLoading(false);
-      },
-      (error) => {
-        console.warn("Firebase 특강 Q&A 로드 오류 -> 로컬 저장소 사용:", error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  const saveToLocalStorage = (newList: LectureQaItem[]) => {
-    setQuestions(newList);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newList));
-    }
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
 
-    const tempId = "qa_" + Date.now();
-    const newQa: LectureQaItem = {
-      id: tempId,
+    onAddQuestion({
       question: question.trim(),
       author: author.trim() || "익명 청년",
       lectureTitle: lectureTitle.trim() || "특강 / 집회",
-      likes: 0,
-      createdAt: new Date().toISOString(),
-    };
-
-    let savedToFirebase = false;
-    try {
-      const qaRef = ref(db, "lecture_qa");
-      const res = await push(qaRef, {
-        question: newQa.question,
-        author: newQa.author,
-        lectureTitle: newQa.lectureTitle,
-        likes: newQa.likes,
-        createdAt: newQa.createdAt,
-      });
-      if (res.key) savedToFirebase = true;
-    } catch (err) {
-      console.warn("Firebase 저장 실패 -> 로컬 저장소에 추가:", err);
-    }
-
-    if (!savedToFirebase) {
-      const updated = [newQa, ...questions];
-      saveToLocalStorage(updated);
-    }
+    });
 
     setQuestion("");
     setAuthor("");
@@ -106,20 +38,10 @@ export default function LectureQaView() {
     setIsWriteOpen(false);
   };
 
-  const handleLike = async (item: LectureQaItem) => {
+  const handleLike = (item: LectureQaItem) => {
     if (likedIds[item.id]) return;
-
-    const updatedLikes = (item.likes || 0) + 1;
     setLikedIds((prev) => ({ ...prev, [item.id]: true }));
-
-    try {
-      const itemRef = ref(db, `lecture_qa/${item.id}`);
-      await update(itemRef, { likes: updatedLikes });
-    } catch (err) {
-      console.warn("Firebase 좋아요 업데이트 실패 -> 로컬 상태 업데이트:", err);
-      const updatedList = questions.map((q) => (q.id === item.id ? { ...q, likes: updatedLikes } : q));
-      saveToLocalStorage(updatedList);
-    }
+    onLikeQuestion(item);
   };
 
   return (
@@ -154,9 +76,7 @@ export default function LectureQaView() {
         </span>
       </div>
 
-      {loading && questions.length === 0 ? (
-        <div className="py-12 text-center text-slate-400 font-bold">질문 목록을 로딩 중입니다...</div>
-      ) : questions.length === 0 ? (
+      {questions.length === 0 ? (
         <div className="bg-white rounded-3xl p-8 text-center border border-slate-100 shadow-sm space-y-2">
           <HelpCircle className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="text-slate-600 font-bold text-sm">아직 질문이 없습니다</p>

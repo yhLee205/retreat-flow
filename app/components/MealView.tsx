@@ -1,50 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import defaultMealData from "@/meals.json";
+import { useState } from "react";
 import { MealDay, MealItem } from "../types";
-import { db } from "@/lib/firebase";
-import { ref, onValue } from "firebase/database";
 import { Utensils, Coffee, Moon, Sun, Flame, Sparkles } from "lucide-react";
 
-export default function MealView() {
-  const [mealDays, setMealDays] = useState<MealDay[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("retreat_meals");
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    }
-    return defaultMealData.meals as MealDay[];
-  });
+interface MealViewProps {
+  mealDays: MealDay[];
+}
 
+export default function MealView({ mealDays }: MealViewProps) {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(0);
-
-  useEffect(() => {
-    const mealsRef = ref(db, "meals");
-    const unsubscribe = onValue(
-      mealsRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const list = Array.isArray(data) ? data : Object.values(data);
-          setMealDays(list as MealDay[]);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_meals", JSON.stringify(list));
-          }
-        }
-      },
-      (error) => {
-        console.warn("Firebase 식단표 로드 오류, 로컬 저장소/defaultMealData 사용:", error);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
 
   const activeDay = mealDays[selectedDayIndex] || mealDays[0] || { dayLabel: "", date: "", items: [] };
 
@@ -160,7 +125,7 @@ export default function MealView() {
       <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-4 text-center space-y-1">
         <p className="text-xs text-blue-800 font-bold">💡 식사 관련 안내</p>
         <p className="text-[11px] text-blue-600 font-medium leading-normal">
-          식단 변경이나 식단표 수정은 <strong>[관리자 센터 &gt; 식단표 관리]</strong>에서 가능합니다.
+          식단 변경이나 식단표 수정은 <strong>[관리자 센터 &gt; 식단표 수정]</strong>에서 가능합니다.
         </p>
       </div>
     </div>

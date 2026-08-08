@@ -21,6 +21,9 @@ import {
   Check,
   Clock,
   Sparkles,
+  Wifi,
+  WifiOff,
+  Copy,
 } from "lucide-react";
 
 interface AdminViewProps {
@@ -29,6 +32,7 @@ interface AdminViewProps {
   complaints: ComplaintItem[];
   questions: LectureQaItem[];
   mealDays: MealDay[];
+  firebaseStatus: "connected" | "permission_denied" | "connecting";
   onUpdateComplaints: (updated: ComplaintItem[]) => void;
   onUpdateQuestions: (updated: LectureQaItem[]) => void;
   onUpdateMeals: (updated: MealDay[]) => void;
@@ -40,6 +44,7 @@ export default function AdminView({
   complaints,
   questions,
   mealDays,
+  firebaseStatus,
   onUpdateComplaints,
   onUpdateQuestions,
   onUpdateMeals,
@@ -63,12 +68,13 @@ export default function AdminView({
   const [localMeals, setLocalMeals] = useState<MealDay[]>(mealDays);
   const [selectedDayIdx, setSelectedDayIdx] = useState<number>(0);
   const [mealSaveSuccess, setMealSaveSuccess] = useState(false);
+  const [jsonCopied, setJsonCopied] = useState(false);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const code = adminCode.trim().toLowerCase();
 
-    // 이스터에그 / 레크리에이션 골든티켓 코드 입력 시
+    // 레크 코드는 case-insensitive
     if (code === "rec2") {
       setIsGoldenTicketOpen(true);
       setErrorMsg("");
@@ -180,6 +186,13 @@ export default function AdminView({
     setTimeout(() => setMealSaveSuccess(false), 3000);
   };
 
+  const handleCopyMealJson = () => {
+    const jsonStr = JSON.stringify({ meals: localMeals }, null, 2);
+    navigator.clipboard.writeText(jsonStr);
+    setJsonCopied(true);
+    setTimeout(() => setJsonCopied(false), 2500);
+  };
+
   // 1. 로그인 전 화면
   if (!isAdminLoggedIn) {
     return (
@@ -265,6 +278,24 @@ export default function AdminView({
             실시간 민원 처리, Q&A 답변 등록, 식단표 편집
           </p>
         </div>
+
+        {/* 클라우드 동기화 상태 표시 바 */}
+        {firebaseStatus === "permission_denied" ? (
+          <div className="bg-rose-950/80 border border-rose-800/80 p-3 rounded-2xl text-xs text-rose-200 space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-rose-300">
+              <WifiOff className="w-4 h-4 text-rose-400" />
+              <span>클라우드 동기화 권한 필요 (현재 내 기기에만 저장됨)</span>
+            </div>
+            <p className="text-[11px] text-rose-300/80 leading-normal">
+              컴퓨터에서 수정한 식단표가 <strong>전체 핸드폰에 실시간 적용</strong>되려면 Firebase 콘솔에서 <code>Rules</code>를 <code>.read: true, .write: true</code> 로 설정하셔야 합니다.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-emerald-950/60 border border-emerald-800/60 p-2.5 rounded-2xl text-xs text-emerald-300 flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <span className="font-bold">클라우드 실시간 동기화 정상 작동 중 (모든 휴대폰 자동 반영)</span>
+          </div>
+        )}
 
         {/* 요약 통계 카드 */}
         <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-center">
@@ -560,13 +591,23 @@ export default function AdminView({
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
               수련회 식단표 편집기
             </h3>
-            <button
-              onClick={handleSaveMeals}
-              className="px-3.5 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md hover:bg-amber-700 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-            >
-              <Save className="w-3.5 h-3.5" />
-              식단표 저장
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopyMealJson}
+                className="px-2.5 py-1.5 bg-slate-800 text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-700 flex items-center gap-1 cursor-pointer transition-colors border border-slate-700"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {jsonCopied ? "복사완료!" : "JSON 복사"}
+              </button>
+
+              <button
+                onClick={handleSaveMeals}
+                className="px-3.5 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md hover:bg-amber-700 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+              >
+                <Save className="w-3.5 h-3.5" />
+                식단표 저장
+              </button>
+            </div>
           </div>
 
           {mealSaveSuccess && (

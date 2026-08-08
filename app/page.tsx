@@ -34,6 +34,9 @@ export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
 
+  // Firebase Status ("connected" | "permission_denied" | "connecting")
+  const [firebaseStatus, setFirebaseStatus] = useState<"connected" | "permission_denied" | "connecting">("connecting");
+
   // Central States
   const [mealDays, setMealDays] = useState<MealDay[]>(() => {
     if (typeof window !== "undefined") {
@@ -89,8 +92,14 @@ export default function Home() {
             })
           );
         }
+        setFirebaseStatus("connected");
       },
-      (error) => console.warn("Firebase Schedules Permission Warning:", error)
+      (error) => {
+        console.warn("Firebase Schedules Permission Warning:", error);
+        if (error.message?.includes("permission_denied") || error.code?.includes("PERMISSION_DENIED")) {
+          setFirebaseStatus("permission_denied");
+        }
+      }
     );
 
     // 2. Meals
@@ -106,8 +115,12 @@ export default function Home() {
             localStorage.setItem("retreat_meals", JSON.stringify(list));
           }
         }
+        setFirebaseStatus("connected");
       },
-      (error) => console.warn("Firebase Meals Permission Warning:", error)
+      (error) => {
+        console.warn("Firebase Meals Permission Warning:", error);
+        setFirebaseStatus("permission_denied");
+      }
     );
 
     // 3. Complaints
@@ -172,8 +185,10 @@ export default function Home() {
     }
     try {
       await set(ref(db, "meals"), newMeals);
-    } catch (err) {
+      setFirebaseStatus("connected");
+    } catch (err: any) {
       console.warn("Firebase 식단표 저장 시도 실패 -> 로컬 저장소 적용:", err);
+      setFirebaseStatus("permission_denied");
     }
   };
 
@@ -208,8 +223,10 @@ export default function Home() {
         status: newItem.status,
         replies: [],
       });
+      setFirebaseStatus("connected");
     } catch (err) {
       console.warn("Firebase 민원 등록 실패 -> 로컬 저장소 저장 완료:", err);
+      setFirebaseStatus("permission_denied");
     }
   };
 
@@ -220,7 +237,6 @@ export default function Home() {
       localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
     }
 
-    // Convert array to object for Firebase set if needed
     const firebaseObj: Record<string, any> = {};
     updatedList.forEach((item) => {
       firebaseObj[item.id] = {
@@ -344,6 +360,7 @@ export default function Home() {
             complaints={complaints}
             questions={questions}
             mealDays={mealDays}
+            firebaseStatus={firebaseStatus}
             onUpdateComplaints={handleUpdateComplaints}
             onUpdateQuestions={handleUpdateQuestions}
             onUpdateMeals={handleUpdateMeals}

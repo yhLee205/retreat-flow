@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { ComplaintItem } from "@/app/types";
+import { safeWriteJson } from "@/lib/safeWrite";
 
 let cachedComplaints: ComplaintItem[] = [];
 
@@ -28,23 +29,15 @@ export async function POST(request: Request) {
     let updatedComplaints: ComplaintItem[] = [];
 
     if (body.complaint) {
-      // Single new complaint to prepend
       updatedComplaints = [body.complaint, ...cachedComplaints];
     } else if (body.complaints && Array.isArray(body.complaints)) {
-      // Full list update (e.g. admin reply, status change, delete)
       updatedComplaints = body.complaints;
     } else {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     cachedComplaints = updatedComplaints;
-
-    try {
-      const filePath = path.join(process.cwd(), "complaints.json");
-      fs.writeFileSync(filePath, JSON.stringify(updatedComplaints, null, 2), "utf-8");
-    } catch (fsErr) {
-      console.warn("Disk write warning for complaints.json:", fsErr);
-    }
+    safeWriteJson("complaints.json", updatedComplaints);
 
     return NextResponse.json({ success: true, complaints: cachedComplaints });
   } catch (err) {

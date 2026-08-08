@@ -3,8 +3,8 @@ import fs from "fs";
 import path from "path";
 import defaultMealData from "@/meals.json";
 import { MealDay } from "@/app/types";
+import { safeWriteJson } from "@/lib/safeWrite";
 
-// In-memory cache for dynamic updates across all clients
 let cachedMeals: MealDay[] = defaultMealData.meals as MealDay[];
 
 export async function GET() {
@@ -34,14 +34,7 @@ export async function POST(request: Request) {
     }
 
     cachedMeals = newMeals;
-
-    // Save to meals.json on disk if writable
-    try {
-      const filePath = path.join(process.cwd(), "meals.json");
-      fs.writeFileSync(filePath, JSON.stringify({ meals: newMeals }, null, 2), "utf-8");
-    } catch (fsErr) {
-      console.warn("Disk write warning (read-only environment):", fsErr);
-    }
+    safeWriteJson("meals.json", { meals: newMeals });
 
     return NextResponse.json({ success: true, meals: cachedMeals });
   } catch (err) {

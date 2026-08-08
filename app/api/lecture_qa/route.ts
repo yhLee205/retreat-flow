@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { LectureQaItem } from "@/app/types";
+import { safeWriteJson } from "@/lib/safeWrite";
 
 let cachedQuestions: LectureQaItem[] = [];
 
@@ -28,23 +29,15 @@ export async function POST(request: Request) {
     let updatedQuestions: LectureQaItem[] = [];
 
     if (body.question) {
-      // Single new question
       updatedQuestions = [body.question, ...cachedQuestions];
     } else if (body.questions && Array.isArray(body.questions)) {
-      // Full list update (like count, pastor answer, delete)
       updatedQuestions = body.questions;
     } else {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     cachedQuestions = updatedQuestions;
-
-    try {
-      const filePath = path.join(process.cwd(), "lecture_qa.json");
-      fs.writeFileSync(filePath, JSON.stringify(updatedQuestions, null, 2), "utf-8");
-    } catch (fsErr) {
-      console.warn("Disk write warning for lecture_qa.json:", fsErr);
-    }
+    safeWriteJson("lecture_qa.json", updatedQuestions);
 
     return NextResponse.json({ success: true, questions: cachedQuestions });
   } catch (err) {

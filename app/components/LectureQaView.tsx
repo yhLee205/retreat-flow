@@ -19,7 +19,6 @@ export default function LectureQaView({
   const [isWriteOpen, setIsWriteOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [author, setAuthor] = useState("");
-  const [lectureTitle, setLectureTitle] = useState("");
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
 
   const handleCreate = (e: React.FormEvent) => {
@@ -29,12 +28,10 @@ export default function LectureQaView({
     onAddQuestion({
       question: question.trim(),
       author: author.trim() || "익명 청년",
-      lectureTitle: lectureTitle.trim() || "특강 / 집회",
     });
 
     setQuestion("");
     setAuthor("");
-    setLectureTitle("");
     setIsWriteOpen(false);
   };
 
@@ -46,16 +43,16 @@ export default function LectureQaView({
 
   return (
     <div className="max-w-md mx-auto px-5 space-y-5 pb-10">
-      {/* 상단 파플/헤더 카드 */}
+      {/* 상단 헤더 카드 */}
       <div className="bg-gradient-to-br from-purple-700 via-indigo-700 to-purple-900 rounded-3xl p-6 text-white shadow-lg flex justify-between items-center">
         <div>
           <span className="text-[10px] font-black tracking-wider bg-white/20 px-2.5 py-1 rounded-md uppercase flex items-center gap-1 w-fit">
             <Sparkles className="w-3 h-3 text-yellow-300" />
-            말씀 & 특강 Q&A
+            2일차 특강 Q&A
           </span>
-          <h2 className="text-xl font-black mt-2">강의 질문함</h2>
+          <h2 className="text-xl font-black mt-2">특강 질문함</h2>
           <p className="text-xs text-purple-200 mt-1 font-medium">
-            수련회 특강시간 궁금한 점을 질문해보세요!
+            2일차 특강시간 궁금한 점을 질문해보세요!
           </p>
         </div>
         <button
@@ -89,19 +86,16 @@ export default function LectureQaView({
                 key={item.id}
                 className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all space-y-3"
               >
-                {/* 상단 태그 & 상태 */}
+                {/* 상단 상태 및 시간 */}
                 <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-100">
-                      {item.lectureTitle || "특강 Q&A"}
-                    </span>
+                  <div>
                     {hasAnswer ? (
-                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-md flex items-center gap-1">
                         <CheckCircle className="w-3 h-3" />
                         답변 완료
                       </span>
                     ) : (
-                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-md">
                         답변 대기
                       </span>
                     )}
@@ -111,7 +105,7 @@ export default function LectureQaView({
                   </span>
                 </div>
 
-                {/* 질문 내용 */}
+                {/* 질문 내용 및 작성자 */}
                 <div>
                   <h4 className="text-base font-bold text-slate-800 leading-relaxed">
                     Q. {item.question}
@@ -120,7 +114,7 @@ export default function LectureQaView({
                 </div>
 
                 {/* 공감(좋아요) 버튼 */}
-                <div className="flex justify-between items-center pt-2">
+                <div className="flex justify-between items-center pt-1">
                   <button
                     onClick={() => handleLike(item)}
                     disabled={likedIds[item.id]}
@@ -163,7 +157,7 @@ export default function LectureQaView({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
           <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-black text-slate-800">특강 질문 남기기</h3>
+              <h3 className="text-lg font-black text-slate-800">2일차 특강 질문 남기기</h3>
               <button
                 onClick={() => setIsWriteOpen(false)}
                 className="p-1 rounded-xl text-slate-400 hover:text-slate-700 cursor-pointer"
@@ -174,18 +168,7 @@ export default function LectureQaView({
 
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">특강 / 강사명 (선택)</label>
-                <input
-                  type="text"
-                  placeholder="예: 저녁 집회, 2일차 특강"
-                  value={lectureTitle}
-                  onChange={(e) => setLectureTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">작성자 닉네임</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1">작성자 이름 / 닉네임</label>
                 <input
                   type="text"
                   placeholder="익명 청년 또는 이름"
@@ -200,7 +183,7 @@ export default function LectureQaView({
                 <textarea
                   required
                   rows={4}
-                  placeholder="강의/설교 시 궁금한 점이나 나누고 싶은 고민을 적어주세요."
+                  placeholder="특강/설교 시간 궁금한 점이나 고민을 자유롭게 적어주세요."
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"

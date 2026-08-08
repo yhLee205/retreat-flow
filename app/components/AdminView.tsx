@@ -515,7 +515,7 @@ export default function AdminView({
               >
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-md border border-purple-100">
-                    👍 공감 {item.likes || 0}개 | {item.lectureTitle || "특강 Q&A"}
+                    👍 공감 {item.likes || 0}개
                   </span>
                   <button
                     onClick={() => handleDeleteQa(item.id)}

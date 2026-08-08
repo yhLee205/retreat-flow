@@ -37,7 +37,7 @@ export default function Home() {
   // Firebase Status ("connected" | "permission_denied" | "connecting")
   const [firebaseStatus, setFirebaseStatus] = useState<"connected" | "permission_denied" | "connecting">("connecting");
 
-  // Central States
+  // Central States (Initial values from default/localStorage fallback)
   const [mealDays, setMealDays] = useState<MealDay[]>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("retreat_meals");
@@ -74,93 +74,62 @@ export default function Home() {
     return [];
   });
 
-  // Fetch latest global meals, complaints, questions from API routes on mount
-  useEffect(() => {
-    // Meals
+  // Helper to fetch server data (Single Source of Truth)
+  const syncWithServerApi = () => {
+    // 1. Meals
     fetch("/api/meals")
       .then((res) => res.json())
       .then((data) => {
         if (data.meals && Array.isArray(data.meals)) {
-          if (typeof window !== "undefined") {
-            const localSaved = localStorage.getItem("retreat_meals");
-            if (localSaved) {
-              try {
-                const parsed = JSON.parse(localSaved);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  fetch("/api/meals", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ meals: parsed }),
-                  }).catch(() => {});
-                  setMealDays(parsed);
-                  return;
-                }
-              } catch (e) {}
-            }
-          }
           setMealDays(data.meals);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_meals", JSON.stringify(data.meals));
+          }
         }
       })
-      .catch((err) => console.warn("API /api/meals fetch failed:", err));
+      .catch((err) => console.warn("API /api/meals fetch error:", err));
 
-    // Complaints
+    // 2. Complaints
     fetch("/api/complaints")
       .then((res) => res.json())
       .then((data) => {
         if (data.complaints && Array.isArray(data.complaints)) {
-          if (typeof window !== "undefined") {
-            const localSaved = localStorage.getItem("retreat_complaints");
-            if (localSaved) {
-              try {
-                const parsed = JSON.parse(localSaved);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  fetch("/api/complaints", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ complaints: parsed }),
-                  }).catch(() => {});
-                  setComplaints(parsed);
-                  return;
-                }
-              } catch (e) {}
-            }
-          }
           setComplaints(data.complaints);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_complaints", JSON.stringify(data.complaints));
+          }
         }
       })
-      .catch((err) => console.warn("API /api/complaints fetch failed:", err));
+      .catch((err) => console.warn("API /api/complaints fetch error:", err));
 
-    // Questions
+    // 3. Questions
     fetch("/api/lecture_qa")
       .then((res) => res.json())
       .then((data) => {
         if (data.questions && Array.isArray(data.questions)) {
-          if (typeof window !== "undefined") {
-            const localSaved = localStorage.getItem("retreat_lecture_qa");
-            if (localSaved) {
-              try {
-                const parsed = JSON.parse(localSaved);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  fetch("/api/lecture_qa", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ questions: parsed }),
-                  }).catch(() => {});
-                  setQuestions(parsed);
-                  return;
-                }
-              } catch (e) {}
-            }
-          }
           setQuestions(data.questions);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_lecture_qa", JSON.stringify(data.questions));
+          }
         }
       })
-      .catch((err) => console.warn("API /api/lecture_qa fetch failed:", err));
+      .catch((err) => console.warn("API /api/lecture_qa fetch error:", err));
+  };
+
+  // 1. On Mount & 3-Second Real-Time Polling for Multi-Device Live Sync
+  useEffect(() => {
+    syncWithServerApi(); // Initial sync on page load
+
+    const pollInterval = setInterval(() => {
+      syncWithServerApi();
+    }, 3000); // Poll every 3s so deleted/added items sync across devices live
+
+    return () => clearInterval(pollInterval);
   }, []);
 
-  // Sync with Firebase RTDB
+  // 2. Sync with Firebase RTDB if available
   useEffect(() => {
-    // 1. Schedules
+    // Schedules
     const scheduleRef = ref(db, "schedules");
     const unsubSchedule = onValue(
       scheduleRef,
@@ -186,7 +155,7 @@ export default function Home() {
       }
     );
 
-    // 2. Meals
+    // Meals
     const mealsRef = ref(db, "meals");
     const unsubMeals = onValue(
       mealsRef,
@@ -201,13 +170,10 @@ export default function Home() {
         }
         setFirebaseStatus("connected");
       },
-      (error) => {
-        console.warn("Firebase Meals Permission Warning:", error);
-        setFirebaseStatus("permission_denied");
-      }
+      (error) => console.warn("Firebase Meals Permission Warning:", error)
     );
 
-    // 3. Complaints
+    // Complaints
     const complaintsRef = ref(db, "complaints");
     const unsubComplaints = onValue(
       complaintsRef,
@@ -228,7 +194,7 @@ export default function Home() {
       (error) => console.warn("Firebase Complaints Permission Warning:", error)
     );
 
-    // 4. Questions
+    // Questions
     const qaRef = ref(db, "lecture_qa");
     const unsubQa = onValue(
       qaRef,
@@ -305,7 +271,6 @@ export default function Home() {
       localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
     }
 
-    // 1. Post to Server API Route
     try {
       await fetch("/api/complaints", {
         method: "POST",
@@ -316,7 +281,6 @@ export default function Home() {
       console.warn("API POST /api/complaints error:", apiErr);
     }
 
-    // 2. Post to Firebase RTDB
     try {
       const complaintsRef = ref(db, "complaints");
       const pushRef = push(complaintsRef);
@@ -343,7 +307,6 @@ export default function Home() {
       localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
     }
 
-    // 1. Post to Server API Route
     try {
       await fetch("/api/complaints", {
         method: "POST",
@@ -354,7 +317,6 @@ export default function Home() {
       console.warn("API POST /api/complaints error:", apiErr);
     }
 
-    // 2. Post to Firebase RTDB
     const firebaseObj: Record<string, any> = {};
     updatedList.forEach((item) => {
       firebaseObj[item.id] = {
@@ -393,7 +355,6 @@ export default function Home() {
       localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
     }
 
-    // 1. Post to Server API Route
     try {
       await fetch("/api/lecture_qa", {
         method: "POST",
@@ -404,7 +365,6 @@ export default function Home() {
       console.warn("API POST /api/lecture_qa error:", apiErr);
     }
 
-    // 2. Post to Firebase RTDB
     try {
       const qaRef = ref(db, "lecture_qa");
       const pushRef = push(qaRef);
@@ -430,7 +390,6 @@ export default function Home() {
       localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
     }
 
-    // 1. Post to Server API Route
     try {
       await fetch("/api/lecture_qa", {
         method: "POST",
@@ -441,7 +400,6 @@ export default function Home() {
       console.warn("API POST /api/lecture_qa error:", apiErr);
     }
 
-    // 2. Post to Firebase RTDB
     try {
       const firebaseObj: Record<string, any> = {};
       updatedList.forEach((q) => {
@@ -460,7 +418,6 @@ export default function Home() {
       localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
     }
 
-    // 1. Post to Server API Route
     try {
       await fetch("/api/lecture_qa", {
         method: "POST",
@@ -471,7 +428,6 @@ export default function Home() {
       console.warn("API POST /api/lecture_qa error:", apiErr);
     }
 
-    // 2. Post to Firebase RTDB
     const firebaseObj: Record<string, any> = {};
     updatedList.forEach((q) => {
       firebaseObj[q.id] = q;

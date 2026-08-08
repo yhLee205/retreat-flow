@@ -18,6 +18,7 @@ import AdminView from "./components/AdminView";
 import { Calendar, Utensils, MessageSquare, HelpCircle, ShieldCheck } from "lucide-react";
 
 export default function Home() {
+  // Official clean schedule directly from schedule.json (Single Source of Truth)
   const defaultList: ScheduleItem[] = (
     (defaultScheduleData.schedules || []) as ScheduleItem[]
   ).sort((a, b) => {
@@ -26,7 +27,7 @@ export default function Home() {
     return timeA - timeB;
   });
 
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(defaultList);
+  const [schedules] = useState<ScheduleItem[]>(defaultList);
   const [now, setNow] = useState(new Date());
 
   // Navigation state
@@ -129,31 +130,8 @@ export default function Home() {
 
   // 2. Sync with Firebase RTDB if available
   useEffect(() => {
-    // Schedules
-    const scheduleRef = ref(db, "schedules");
-    const unsubSchedule = onValue(
-      scheduleRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const list: ScheduleItem[] = Array.isArray(data) ? data : Object.values(data);
-          setSchedules(
-            list.sort((a, b) => {
-              const timeA = new Date(`${a.date}T${a.startTime}:00`).getTime();
-              const timeB = new Date(`${b.date}T${b.startTime}:00`).getTime();
-              return timeA - timeB;
-            })
-          );
-        }
-        setFirebaseStatus("connected");
-      },
-      (error: any) => {
-        console.warn("Firebase Schedules Permission Warning:", error);
-        if (error?.message?.includes("permission_denied") || error?.code?.includes("PERMISSION_DENIED")) {
-          setFirebaseStatus("permission_denied");
-        }
-      }
-    );
+    // Overwrite Firebase /schedules with clean schedule.json if writable
+    set(ref(db, "schedules"), defaultList).catch(() => {});
 
     // Meals
     const mealsRef = ref(db, "meals");
@@ -217,7 +195,6 @@ export default function Home() {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => {
-      unsubSchedule();
       unsubMeals();
       unsubComplaints();
       unsubQa();

@@ -495,11 +495,10 @@ export default function AdminView({
       {/* 탭 2: 특강 Q&A 관리 */}
       {activeTab === "lecture_qa" && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center px-1">
+          <div className="px-1">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
               질문 목록 및 목사님 공식 답변 기록
             </h3>
-            <span className="text-xs text-purple-600 font-bold">🔥 공감순 정렬</span>
           </div>
 
           {questions.length === 0 ? (

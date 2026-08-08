@@ -90,13 +90,10 @@ export default function ComplaintsView({
       </div>
 
       {/* 리스트 헤더 */}
-      <div className="flex justify-between items-center px-1">
+      <div className="px-1">
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
           등록된 민원 ({complaints.length})
         </h3>
-        <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg">
-          🔒 비공개 암호 지원
-        </span>
       </div>
 
       {complaints.length === 0 ? (

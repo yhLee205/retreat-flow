@@ -67,13 +67,10 @@ export default function LectureQaView({
       </div>
 
       {/* 목록 헤더 */}
-      <div className="flex justify-between items-center px-1">
+      <div className="px-1">
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
           등록된 질문 ({questions.length})
         </h3>
-        <span className="text-xs text-purple-600 font-bold bg-purple-50 px-2.5 py-1 rounded-lg">
-          🔥 공감순 정렬
-        </span>
       </div>
 
       {questions.length === 0 ? (

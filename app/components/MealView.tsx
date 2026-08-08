@@ -63,14 +63,9 @@ export default function MealView({ mealDays }: MealViewProps) {
       </div>
 
       {/* 날짜 타이틀 */}
-      <div className="flex justify-between items-center px-1">
-        <div>
-          <h2 className="text-xl font-black text-slate-800">{activeDay.dayLabel} 식단</h2>
-          <p className="text-xs text-slate-400 font-medium mt-0.5">{activeDay.date}</p>
-        </div>
-        <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200/60">
-          맛있는 밥상 🍱
-        </span>
+      <div className="px-1">
+        <h2 className="text-xl font-black text-slate-800">{activeDay.dayLabel} 식단</h2>
+        <p className="text-xs text-slate-400 font-medium mt-0.5">{activeDay.date}</p>
       </div>
 
       {/* 식단 카드 리스트 */}

@@ -74,39 +74,88 @@ export default function Home() {
     return [];
   });
 
-  // Fetch latest global meals from API route or preserve local edits
+  // Fetch latest global meals, complaints, questions from API routes on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const localSaved = localStorage.getItem("retreat_meals");
-      if (localSaved) {
-        try {
-          const parsed = JSON.parse(localSaved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            // Local edits exist -> push local edits to server API route so server meals.json gets updated!
-            fetch("/api/meals", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ meals: parsed }),
-            }).catch(() => {});
-            setMealDays(parsed);
-            return;
-          }
-        } catch (e) {}
-      }
-    }
-
-    // Fallback if no local edits exist: fetch from server API
+    // Meals
     fetch("/api/meals")
       .then((res) => res.json())
       .then((data) => {
         if (data.meals && Array.isArray(data.meals)) {
-          setMealDays(data.meals);
           if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_meals", JSON.stringify(data.meals));
+            const localSaved = localStorage.getItem("retreat_meals");
+            if (localSaved) {
+              try {
+                const parsed = JSON.parse(localSaved);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  fetch("/api/meals", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ meals: parsed }),
+                  }).catch(() => {});
+                  setMealDays(parsed);
+                  return;
+                }
+              } catch (e) {}
+            }
           }
+          setMealDays(data.meals);
         }
       })
-      .catch((err) => console.warn("API /api/meals fetch failed, using fallback:", err));
+      .catch((err) => console.warn("API /api/meals fetch failed:", err));
+
+    // Complaints
+    fetch("/api/complaints")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.complaints && Array.isArray(data.complaints)) {
+          if (typeof window !== "undefined") {
+            const localSaved = localStorage.getItem("retreat_complaints");
+            if (localSaved) {
+              try {
+                const parsed = JSON.parse(localSaved);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  fetch("/api/complaints", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ complaints: parsed }),
+                  }).catch(() => {});
+                  setComplaints(parsed);
+                  return;
+                }
+              } catch (e) {}
+            }
+          }
+          setComplaints(data.complaints);
+        }
+      })
+      .catch((err) => console.warn("API /api/complaints fetch failed:", err));
+
+    // Questions
+    fetch("/api/lecture_qa")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.questions && Array.isArray(data.questions)) {
+          if (typeof window !== "undefined") {
+            const localSaved = localStorage.getItem("retreat_lecture_qa");
+            if (localSaved) {
+              try {
+                const parsed = JSON.parse(localSaved);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  fetch("/api/lecture_qa", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ questions: parsed }),
+                  }).catch(() => {});
+                  setQuestions(parsed);
+                  return;
+                }
+              } catch (e) {}
+            }
+          }
+          setQuestions(data.questions);
+        }
+      })
+      .catch((err) => console.warn("API /api/lecture_qa fetch failed:", err));
   }, []);
 
   // Sync with Firebase RTDB
@@ -219,7 +268,6 @@ export default function Home() {
       localStorage.setItem("retreat_meals", JSON.stringify(newMeals));
     }
 
-    // 1. Post to Server API Route for global file/cache update
     try {
       await fetch("/api/meals", {
         method: "POST",
@@ -230,7 +278,6 @@ export default function Home() {
       console.warn("API POST /api/meals error:", apiErr);
     }
 
-    // 2. Post to Firebase Realtime Database
     try {
       await set(ref(db, "meals"), newMeals);
       setFirebaseStatus("connected");
@@ -240,7 +287,7 @@ export default function Home() {
     }
   };
 
-  // Add Complaint
+  // Add Complaint globally
   const handleAddComplaint = async (
     data: Omit<ComplaintItem, "id" | "createdAt" | "status" | "replies">
   ) => {
@@ -258,6 +305,18 @@ export default function Home() {
       localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
     }
 
+    // 1. Post to Server API Route
+    try {
+      await fetch("/api/complaints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ complaint: newItem }),
+      });
+    } catch (apiErr) {
+      console.warn("API POST /api/complaints error:", apiErr);
+    }
+
+    // 2. Post to Firebase RTDB
     try {
       const complaintsRef = ref(db, "complaints");
       const pushRef = push(complaintsRef);
@@ -273,18 +332,29 @@ export default function Home() {
       });
       setFirebaseStatus("connected");
     } catch (err) {
-      console.warn("Firebase 민원 등록 실패 -> 로컬 저장소 저장 완료:", err);
-      setFirebaseStatus("permission_denied");
+      console.warn("Firebase 민원 등록 실패 -> 서버 API 및 로컬 저장 완료:", err);
     }
   };
 
-  // Update Complaints (Admin replies, status change, delete)
+  // Update Complaints globally (Admin replies, status change, delete)
   const handleUpdateComplaints = async (updatedList: ComplaintItem[]) => {
     setComplaints(updatedList);
     if (typeof window !== "undefined") {
       localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
     }
 
+    // 1. Post to Server API Route
+    try {
+      await fetch("/api/complaints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ complaints: updatedList }),
+      });
+    } catch (apiErr) {
+      console.warn("API POST /api/complaints error:", apiErr);
+    }
+
+    // 2. Post to Firebase RTDB
     const firebaseObj: Record<string, any> = {};
     updatedList.forEach((item) => {
       firebaseObj[item.id] = {
@@ -302,11 +372,11 @@ export default function Home() {
     try {
       await set(ref(db, "complaints"), firebaseObj);
     } catch (err) {
-      console.warn("Firebase 민원 업데이트 실패 -> 로컬 적용 완료:", err);
+      console.warn("Firebase 민원 업데이트 실패 -> 서버 API 적용 완료:", err);
     }
   };
 
-  // Add Question
+  // Add Question globally
   const handleAddQuestion = async (
     data: Omit<LectureQaItem, "id" | "likes" | "createdAt">
   ) => {
@@ -323,6 +393,18 @@ export default function Home() {
       localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
     }
 
+    // 1. Post to Server API Route
+    try {
+      await fetch("/api/lecture_qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: newItem }),
+      });
+    } catch (apiErr) {
+      console.warn("API POST /api/lecture_qa error:", apiErr);
+    }
+
+    // 2. Post to Firebase RTDB
     try {
       const qaRef = ref(db, "lecture_qa");
       const pushRef = push(qaRef);
@@ -334,11 +416,11 @@ export default function Home() {
         createdAt: newItem.createdAt,
       });
     } catch (err) {
-      console.warn("Firebase 질문 등록 실패 -> 로컬 저장 완료:", err);
+      console.warn("Firebase 질문 등록 실패 -> 서버 API 및 로컬 저장 완료:", err);
     }
   };
 
-  // Like Question
+  // Like Question globally
   const handleLikeQuestion = async (item: LectureQaItem) => {
     const updatedList = questions.map((q) =>
       q.id === item.id ? { ...q, likes: (q.likes || 0) + 1 } : q
@@ -348,6 +430,18 @@ export default function Home() {
       localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
     }
 
+    // 1. Post to Server API Route
+    try {
+      await fetch("/api/lecture_qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions: updatedList }),
+      });
+    } catch (apiErr) {
+      console.warn("API POST /api/lecture_qa error:", apiErr);
+    }
+
+    // 2. Post to Firebase RTDB
     try {
       const firebaseObj: Record<string, any> = {};
       updatedList.forEach((q) => {
@@ -355,17 +449,29 @@ export default function Home() {
       });
       await set(ref(db, "lecture_qa"), firebaseObj);
     } catch (err) {
-      console.warn("Firebase 좋아요 저장 실패 -> 로컬 저장 완료:", err);
+      console.warn("Firebase 좋아요 저장 실패 -> 서버 API 및 로컬 저장 완료:", err);
     }
   };
 
-  // Update Questions (Admin Pastor Answer, Delete)
+  // Update Questions globally (Admin Pastor Answer, Delete)
   const handleUpdateQuestions = async (updatedList: LectureQaItem[]) => {
     setQuestions(updatedList);
     if (typeof window !== "undefined") {
       localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
     }
 
+    // 1. Post to Server API Route
+    try {
+      await fetch("/api/lecture_qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions: updatedList }),
+      });
+    } catch (apiErr) {
+      console.warn("API POST /api/lecture_qa error:", apiErr);
+    }
+
+    // 2. Post to Firebase RTDB
     const firebaseObj: Record<string, any> = {};
     updatedList.forEach((q) => {
       firebaseObj[q.id] = q;
@@ -374,7 +480,7 @@ export default function Home() {
     try {
       await set(ref(db, "lecture_qa"), firebaseObj);
     } catch (err) {
-      console.warn("Firebase 질문 목록 업데이트 실패 -> 로컬 적용 완료:", err);
+      console.warn("Firebase 질문 목록 업데이트 실패 -> 서버 API 적용 완료:", err);
     }
   };
 

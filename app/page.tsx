@@ -74,6 +74,21 @@ export default function Home() {
     return [];
   });
 
+  // Fetch latest global meals from API route on mount
+  useEffect(() => {
+    fetch("/api/meals")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.meals && Array.isArray(data.meals)) {
+          setMealDays(data.meals);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("retreat_meals", JSON.stringify(data.meals));
+          }
+        }
+      })
+      .catch((err) => console.warn("API /api/meals fetch failed, using fallback:", err));
+  }, []);
+
   // Sync with Firebase RTDB
   useEffect(() => {
     // 1. Schedules
@@ -177,17 +192,30 @@ export default function Home() {
 
   // --- Handlers ---
 
-  // Update Meals
+  // Update Meals globally
   const handleUpdateMeals = async (newMeals: MealDay[]) => {
     setMealDays(newMeals);
     if (typeof window !== "undefined") {
       localStorage.setItem("retreat_meals", JSON.stringify(newMeals));
     }
+
+    // 1. Post to Server API Route for global file/cache update
+    try {
+      await fetch("/api/meals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meals: newMeals }),
+      });
+    } catch (apiErr) {
+      console.warn("API POST /api/meals error:", apiErr);
+    }
+
+    // 2. Post to Firebase Realtime Database
     try {
       await set(ref(db, "meals"), newMeals);
       setFirebaseStatus("connected");
     } catch (err: any) {
-      console.warn("Firebase 식단표 저장 시도 실패 -> 로컬 저장소 적용:", err);
+      console.warn("Firebase 식단표 저장 시도 실패 -> 서버 API 및 로컬 저장소 적용:", err);
       setFirebaseStatus("permission_denied");
     }
   };

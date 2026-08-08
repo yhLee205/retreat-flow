@@ -2,34 +2,53 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { LectureQaItem } from "@/app/types";
-import { safeWriteJson } from "@/lib/safeWrite";
 
-let cachedQuestions: LectureQaItem[] = [];
+let cachedQuestions: LectureQaItem[] | null = null;
 
-export async function GET() {
+function loadQuestionsFromDisk(): LectureQaItem[] {
   try {
     const filePath = path.join(process.cwd(), "lecture_qa.json");
     if (fs.existsSync(filePath)) {
       const fileData = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileData);
       if (Array.isArray(parsed)) {
-        cachedQuestions = parsed;
+        return parsed;
       }
     }
   } catch (err) {
-    console.warn("Could not read lecture_qa.json from disk, using cache:", err);
+    console.warn("[API Lecture QA] Could not read lecture_qa.json:", err);
   }
+  return [];
+}
 
+function saveQuestionsToDisk(items: LectureQaItem[]) {
+  try {
+    const filePath = path.join(process.cwd(), "lecture_qa.json");
+    fs.writeFileSync(filePath, JSON.stringify(items, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[API Lecture QA] Could not write lecture_qa.json:", err);
+  }
+}
+
+export async function GET() {
+  if (cachedQuestions === null) {
+    cachedQuestions = loadQuestionsFromDisk();
+  }
   return NextResponse.json({ questions: cachedQuestions });
 }
 
 export async function POST(request: Request) {
   try {
+    if (cachedQuestions === null) {
+      cachedQuestions = loadQuestionsFromDisk();
+    }
+
     const body = await request.json();
     let updatedQuestions: LectureQaItem[] = [];
 
     if (body.question) {
-      updatedQuestions = [body.question, ...cachedQuestions];
+      const existing = cachedQuestions.filter((q) => q.id !== body.question.id);
+      updatedQuestions = [body.question, ...existing];
     } else if (body.questions && Array.isArray(body.questions)) {
       updatedQuestions = body.questions;
     } else {
@@ -37,7 +56,7 @@ export async function POST(request: Request) {
     }
 
     cachedQuestions = updatedQuestions;
-    safeWriteJson("lecture_qa.json", updatedQuestions);
+    saveQuestionsToDisk(updatedQuestions);
 
     return NextResponse.json({ success: true, questions: cachedQuestions });
   } catch (err) {

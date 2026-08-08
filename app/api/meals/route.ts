@@ -3,24 +3,38 @@ import fs from "fs";
 import path from "path";
 import defaultMealData from "@/meals.json";
 import { MealDay } from "@/app/types";
-import { safeWriteJson } from "@/lib/safeWrite";
 
-let cachedMeals: MealDay[] = defaultMealData.meals as MealDay[];
+let cachedMeals: MealDay[] | null = null;
 
-export async function GET() {
+function loadMealsFromDisk(): MealDay[] {
   try {
     const filePath = path.join(process.cwd(), "meals.json");
     if (fs.existsSync(filePath)) {
       const fileData = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileData);
       if (parsed.meals && Array.isArray(parsed.meals)) {
-        cachedMeals = parsed.meals;
+        return parsed.meals;
       }
     }
   } catch (err) {
-    console.warn("Could not read meals.json from disk, using cache:", err);
+    console.warn("[API Meals] Could not read meals.json:", err);
   }
+  return defaultMealData.meals as MealDay[];
+}
 
+function saveMealsToDisk(items: MealDay[]) {
+  try {
+    const filePath = path.join(process.cwd(), "meals.json");
+    fs.writeFileSync(filePath, JSON.stringify({ meals: items }, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[API Meals] Could not write meals.json:", err);
+  }
+}
+
+export async function GET() {
+  if (cachedMeals === null) {
+    cachedMeals = loadMealsFromDisk();
+  }
   return NextResponse.json({ meals: cachedMeals });
 }
 
@@ -34,7 +48,7 @@ export async function POST(request: Request) {
     }
 
     cachedMeals = newMeals;
-    safeWriteJson("meals.json", { meals: newMeals });
+    saveMealsToDisk(newMeals);
 
     return NextResponse.json({ success: true, meals: cachedMeals });
   } catch (err) {

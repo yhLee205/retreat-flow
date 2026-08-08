@@ -37,7 +37,7 @@ export default function Home() {
   // Firebase Status ("connected" | "permission_denied" | "connecting")
   const [firebaseStatus, setFirebaseStatus] = useState<"connected" | "permission_denied" | "connecting">("connecting");
 
-  // Central States (Initial values from default/localStorage fallback)
+  // Central States
   const [mealDays, setMealDays] = useState<MealDay[]>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("retreat_meals");
@@ -122,7 +122,7 @@ export default function Home() {
 
     const pollInterval = setInterval(() => {
       syncWithServerApi();
-    }, 3000); // Poll every 3s so deleted/added items sync across devices live
+    }, 3000);
 
     return () => clearInterval(pollInterval);
   }, []);
@@ -235,11 +235,13 @@ export default function Home() {
     }
 
     try {
-      await fetch("/api/meals", {
+      const res = await fetch("/api/meals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ meals: newMeals }),
       });
+      const data = await res.json();
+      if (data.meals) setMealDays(data.meals);
     } catch (apiErr) {
       console.warn("API POST /api/meals error:", apiErr);
     }
@@ -248,7 +250,7 @@ export default function Home() {
       await set(ref(db, "meals"), newMeals);
       setFirebaseStatus("connected");
     } catch (err: any) {
-      console.warn("Firebase 식단표 저장 시도 실패 -> 서버 API 및 로컬 저장소 적용:", err);
+      console.warn("Firebase 식단표 저장 시도 실패 -> 서버 API 적용 완료:", err);
       setFirebaseStatus("permission_denied");
     }
   };
@@ -272,11 +274,18 @@ export default function Home() {
     }
 
     try {
-      await fetch("/api/complaints", {
+      const res = await fetch("/api/complaints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ complaint: newItem }),
       });
+      const resData = await res.json();
+      if (resData.complaints) {
+        setComplaints(resData.complaints);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("retreat_complaints", JSON.stringify(resData.complaints));
+        }
+      }
     } catch (apiErr) {
       console.warn("API POST /api/complaints error:", apiErr);
     }
@@ -296,7 +305,7 @@ export default function Home() {
       });
       setFirebaseStatus("connected");
     } catch (err) {
-      console.warn("Firebase 민원 등록 실패 -> 서버 API 및 로컬 저장 완료:", err);
+      console.warn("Firebase 민원 등록 실패 -> 서버 API 저장 완료:", err);
     }
   };
 
@@ -308,11 +317,18 @@ export default function Home() {
     }
 
     try {
-      await fetch("/api/complaints", {
+      const res = await fetch("/api/complaints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ complaints: updatedList }),
       });
+      const resData = await res.json();
+      if (resData.complaints) {
+        setComplaints(resData.complaints);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("retreat_complaints", JSON.stringify(resData.complaints));
+        }
+      }
     } catch (apiErr) {
       console.warn("API POST /api/complaints error:", apiErr);
     }
@@ -356,11 +372,18 @@ export default function Home() {
     }
 
     try {
-      await fetch("/api/lecture_qa", {
+      const res = await fetch("/api/lecture_qa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: newItem }),
       });
+      const resData = await res.json();
+      if (resData.questions) {
+        setQuestions(resData.questions);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("retreat_lecture_qa", JSON.stringify(resData.questions));
+        }
+      }
     } catch (apiErr) {
       console.warn("API POST /api/lecture_qa error:", apiErr);
     }
@@ -371,12 +394,11 @@ export default function Home() {
       await set(pushRef, {
         question: newItem.question,
         author: newItem.author,
-        lectureTitle: newItem.lectureTitle,
         likes: newItem.likes,
         createdAt: newItem.createdAt,
       });
     } catch (err) {
-      console.warn("Firebase 질문 등록 실패 -> 서버 API 및 로컬 저장 완료:", err);
+      console.warn("Firebase 질문 등록 실패 -> 서버 API 저장 완료:", err);
     }
   };
 
@@ -391,11 +413,15 @@ export default function Home() {
     }
 
     try {
-      await fetch("/api/lecture_qa", {
+      const res = await fetch("/api/lecture_qa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questions: updatedList }),
       });
+      const resData = await res.json();
+      if (resData.questions) {
+        setQuestions(resData.questions);
+      }
     } catch (apiErr) {
       console.warn("API POST /api/lecture_qa error:", apiErr);
     }
@@ -407,7 +433,7 @@ export default function Home() {
       });
       await set(ref(db, "lecture_qa"), firebaseObj);
     } catch (err) {
-      console.warn("Firebase 좋아요 저장 실패 -> 서버 API 및 로컬 저장 완료:", err);
+      console.warn("Firebase 좋아요 저장 실패 -> 서버 API 저장 완료:", err);
     }
   };
 
@@ -419,11 +445,15 @@ export default function Home() {
     }
 
     try {
-      await fetch("/api/lecture_qa", {
+      const res = await fetch("/api/lecture_qa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questions: updatedList }),
       });
+      const resData = await res.json();
+      if (resData.questions) {
+        setQuestions(resData.questions);
+      }
     } catch (apiErr) {
       console.warn("API POST /api/lecture_qa error:", apiErr);
     }

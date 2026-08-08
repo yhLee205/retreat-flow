@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { db } from "@/lib/firebase";
-import { ref, onValue, push, set } from "firebase/database";
+import { ref, onValue, push, set, remove, update, get } from "firebase/database";
 import defaultScheduleData from "@/schedule.json";
 import defaultMealData from "@/meals.json";
 import { ScheduleItem, MealDay, ComplaintItem, LectureQaItem } from "./types";
@@ -17,131 +17,89 @@ import AdminView from "./components/AdminView";
 
 import { Calendar, Utensils, MessageSquare, HelpCircle, ShieldCheck } from "lucide-react";
 
+// ─── Firebase RTDB Helper: parse snapshot to sorted array ───
+function parseComplaints(data: any): ComplaintItem[] {
+  if (!data) return [];
+  const list: ComplaintItem[] = Object.entries(data).map(([id, val]: [string, any]) => ({
+    id,
+    ...val,
+    replies: val.replies ? (Array.isArray(val.replies) ? val.replies : Object.values(val.replies)) : [],
+  }));
+  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return list;
+}
+
+function parseQuestions(data: any): LectureQaItem[] {
+  if (!data) return [];
+  const list: LectureQaItem[] = Object.entries(data).map(([id, val]: [string, any]) => ({
+    id,
+    ...val,
+  }));
+  list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+  return list;
+}
+
+// ─── Main Page Component ───
 export default function Home() {
-  const defaultList: ScheduleItem[] = (
-    (defaultScheduleData.schedules || []) as ScheduleItem[]
-  ).sort((a, b) => {
-    const timeA = new Date(`${a.date}T${a.startTime}:00`).getTime();
-    const timeB = new Date(`${b.date}T${b.startTime}:00`).getTime();
-    return timeA - timeB;
-  });
+  // Schedule (from schedule.json only – single source of truth)
+  const [schedules] = useState<ScheduleItem[]>(() =>
+    ((defaultScheduleData.schedules || []) as ScheduleItem[]).sort((a, b) => {
+      const tA = new Date(`${a.date}T${a.startTime}:00`).getTime();
+      const tB = new Date(`${b.date}T${b.startTime}:00`).getTime();
+      return tA - tB;
+    })
+  );
 
-  const [schedules] = useState<ScheduleItem[]>(defaultList);
   const [now, setNow] = useState(new Date());
-
-  // Navigation state
   const [currentTab, setCurrentTab] = useState<string>("schedule");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-
-  // Firebase Status ("connected" | "permission_denied" | "connecting")
   const [firebaseStatus, setFirebaseStatus] = useState<"connected" | "permission_denied" | "connecting">("connecting");
 
-  // Central States (Server-driven, no local array overrides)
+  // ─── State ───
   const [mealDays, setMealDays] = useState<MealDay[]>(defaultMealData.meals as MealDay[]);
   const [complaints, setComplaints] = useState<ComplaintItem[]>([]);
   const [questions, setQuestions] = useState<LectureQaItem[]>([]);
 
-  // Helper to fetch server data (Single Source of Truth)
-  const syncWithServerApi = () => {
+  // ─── Firebase Realtime DB: THE ONLY data source ───
+  useEffect(() => {
     // 1. Meals
-    fetch("/api/meals")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.meals && Array.isArray(data.meals)) {
-          setMealDays(data.meals);
-        }
-      })
-      .catch((err) => console.warn("API /api/meals fetch error:", err));
-
-    // 2. Complaints (DC Inside style board API)
-    fetch("/api/complaints")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.complaints && Array.isArray(data.complaints)) {
-          setComplaints(data.complaints);
-        }
-      })
-      .catch((err) => console.warn("API /api/complaints fetch error:", err));
-
-    // 3. Questions (DC Inside style board API)
-    fetch("/api/lecture_qa")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.questions && Array.isArray(data.questions)) {
-          setQuestions(data.questions);
-        }
-      })
-      .catch((err) => console.warn("API /api/lecture_qa fetch error:", err));
-  };
-
-  // 1. On Mount & 3-Second Real-Time Polling for Multi-Device Live Sync
-  useEffect(() => {
-    syncWithServerApi(); // Initial sync on page load
-
-    const pollInterval = setInterval(() => {
-      syncWithServerApi();
-    }, 3000);
-
-    return () => clearInterval(pollInterval);
-  }, []);
-
-  // 2. Sync with Firebase RTDB if available
-  useEffect(() => {
-    // Overwrite Firebase /schedules with clean schedule.json if writable
-    set(ref(db, "schedules"), defaultList).catch(() => {});
-
-    // Meals
     const mealsRef = ref(db, "meals");
     const unsubMeals = onValue(
       mealsRef,
-      (snapshot) => {
-        const data = snapshot.val();
+      (snap) => {
+        const data = snap.val();
         if (data) {
-          const list = Array.isArray(data) ? data : Object.values(data);
-          setMealDays(list as MealDay[]);
+          setMealDays(Array.isArray(data) ? data : Object.values(data));
         }
         setFirebaseStatus("connected");
       },
-      (error) => console.warn("Firebase Meals Permission Warning:", error)
+      () => setFirebaseStatus("permission_denied")
     );
 
-    // Complaints
+    // 2. Complaints
     const complaintsRef = ref(db, "complaints");
     const unsubComplaints = onValue(
       complaintsRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const list: ComplaintItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-            id,
-            ...value,
-          }));
-          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setComplaints(list);
-        }
+      (snap) => {
+        setComplaints(parseComplaints(snap.val()));
+        setFirebaseStatus("connected");
       },
-      (error) => console.warn("Firebase Complaints Permission Warning:", error)
+      () => setFirebaseStatus("permission_denied")
     );
 
-    // Questions
+    // 3. Questions
     const qaRef = ref(db, "lecture_qa");
     const unsubQa = onValue(
       qaRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const list: LectureQaItem[] = Object.entries(data).map(([id, value]: [string, any]) => ({
-            id,
-            ...value,
-          }));
-          list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-          setQuestions(list);
-        }
+      (snap) => {
+        setQuestions(parseQuestions(snap.val()));
+        setFirebaseStatus("connected");
       },
-      (error) => console.warn("Firebase Q&A Permission Warning:", error)
+      () => setFirebaseStatus("permission_denied")
     );
 
+    // Timer
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => {
       unsubMeals();
@@ -151,218 +109,155 @@ export default function Home() {
     };
   }, []);
 
-  // --- Handlers ---
-
-  // Update Meals globally
-  const handleUpdateMeals = async (newMeals: MealDay[]) => {
-    setMealDays(newMeals);
-
-    try {
-      const res = await fetch("/api/meals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meals: newMeals }),
-      });
-      const data = await res.json();
-      if (data.meals) setMealDays(data.meals);
-    } catch (apiErr) {
-      console.warn("API POST /api/meals error:", apiErr);
-    }
-
+  // ─── Meals Handler ───
+  const handleUpdateMeals = useCallback(async (newMeals: MealDay[]) => {
+    setMealDays(newMeals); // optimistic
     try {
       await set(ref(db, "meals"), newMeals);
-      setFirebaseStatus("connected");
-    } catch (err: any) {
-      console.warn("Firebase 식단표 저장 시도 실패 -> 서버 API 적용 완료:", err);
-      setFirebaseStatus("permission_denied");
+    } catch (err) {
+      console.warn("Firebase meals write failed:", err);
     }
-  };
+  }, []);
 
-  // Add Complaint globally (Action: create)
-  const handleAddComplaint = async (
-    data: Omit<ComplaintItem, "id" | "createdAt" | "status" | "replies">
-  ) => {
+  // ─── Complaints Handlers (enterprise CRUD – individual operations) ───
+  const handleAddComplaint = useCallback(
+    async (data: Omit<ComplaintItem, "id" | "createdAt" | "status" | "replies">) => {
+      const newRef = push(ref(db, "complaints"));
+      const newPost = {
+        title: data.title,
+        content: data.content,
+        author: data.author || "익명",
+        isPrivate: data.isPrivate,
+        passcode: data.passcode || "",
+        createdAt: new Date().toISOString(),
+        status: "pending",
+      };
+      try {
+        await set(newRef, newPost);
+      } catch (err) {
+        console.warn("Firebase complaint create failed:", err);
+      }
+    },
+    []
+  );
+
+  const handleUpdateComplaints = useCallback(
+    async (updatedList: ComplaintItem[]) => {
+      // Detect DELETE: find items in current state that are missing from updatedList
+      const updatedIds = new Set(updatedList.map((c) => c.id));
+      for (const c of complaints) {
+        if (!updatedIds.has(c.id)) {
+          // DELETE this specific post
+          try {
+            await remove(ref(db, `complaints/${c.id}`));
+          } catch (err) {
+            console.warn("Firebase complaint delete failed:", err);
+          }
+          return; // Firebase listener will auto-update state
+        }
+      }
+
+      // Detect REPLY or STATUS CHANGE on a specific post
+      for (const item of updatedList) {
+        const original = complaints.find((c) => c.id === item.id);
+        if (!original) continue;
+
+        const changes: Record<string, any> = {};
+
+        // Status changed
+        if (item.status !== original.status) {
+          changes.status = item.status;
+        }
+
+        // New reply added
+        const oldReplies = original.replies || [];
+        const newReplies = item.replies || [];
+        if (newReplies.length > oldReplies.length) {
+          changes.replies = newReplies;
+          changes.status = "resolved"; // auto-resolve on reply
+        }
+
+        if (Object.keys(changes).length > 0) {
+          try {
+            await update(ref(db, `complaints/${item.id}`), changes);
+          } catch (err) {
+            console.warn("Firebase complaint update failed:", err);
+          }
+          return; // Firebase listener will auto-update state
+        }
+      }
+    },
+    [complaints]
+  );
+
+  // ─── Q&A Handlers (enterprise CRUD – individual operations) ───
+  const handleAddQuestion = useCallback(
+    async (data: Omit<LectureQaItem, "id" | "likes" | "createdAt">) => {
+      const newRef = push(ref(db, "lecture_qa"));
+      const newQa = {
+        question: data.question,
+        author: data.author || "익명 청년",
+        likes: 0,
+        createdAt: new Date().toISOString(),
+      };
+      try {
+        await set(newRef, newQa);
+      } catch (err) {
+        console.warn("Firebase question create failed:", err);
+      }
+    },
+    []
+  );
+
+  const handleLikeQuestion = useCallback(async (item: LectureQaItem) => {
     try {
-      const res = await fetch("/api/complaints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          title: data.title,
-          content: data.content,
-          author: data.author,
-          isPrivate: data.isPrivate,
-          passcode: data.passcode,
-        }),
-      });
-      const resData = await res.json();
-      if (resData.complaints) {
-        setComplaints(resData.complaints);
-      }
-    } catch (apiErr) {
-      console.warn("API POST /api/complaints action:create error:", apiErr);
+      // Atomic increment: read current value, increment, write back
+      const qaItemRef = ref(db, `lecture_qa/${item.id}/likes`);
+      const snap = await get(qaItemRef);
+      const currentLikes = snap.val() || 0;
+      await set(qaItemRef, currentLikes + 1);
+    } catch (err) {
+      console.warn("Firebase like failed:", err);
     }
-  };
+  }, []);
 
-  // Update Complaints globally (Detect delete, reply, or status toggle)
-  const handleUpdateComplaints = async (updatedList: ComplaintItem[]) => {
-    // Detect deletion
-    if (updatedList.length < complaints.length) {
-      const currentIds = new Set(updatedList.map((c) => c.id));
-      const deletedItem = complaints.find((c) => !currentIds.has(c.id));
-      if (deletedItem) {
-        try {
-          const res = await fetch("/api/complaints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "delete", id: deletedItem.id }),
-          });
-          const resData = await res.json();
-          if (resData.complaints) setComplaints(resData.complaints);
+  const handleUpdateQuestions = useCallback(
+    async (updatedList: LectureQaItem[]) => {
+      // Detect DELETE
+      const updatedIds = new Set(updatedList.map((q) => q.id));
+      for (const q of questions) {
+        if (!updatedIds.has(q.id)) {
+          try {
+            await remove(ref(db, `lecture_qa/${q.id}`));
+          } catch (err) {
+            console.warn("Firebase question delete failed:", err);
+          }
           return;
-        } catch (err) {
-          console.warn("API action:delete error:", err);
-        }
-      }
-    }
-
-    // Detect reply or status change
-    for (const item of updatedList) {
-      const original = complaints.find((c) => c.id === item.id);
-      if (!original) continue;
-
-      // New reply added
-      if ((item.replies || []).length > (original.replies || []).length) {
-        const lastReply = item.replies![item.replies!.length - 1];
-        try {
-          const res = await fetch("/api/complaints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "reply",
-              id: item.id,
-              author: lastReply.author,
-              content: lastReply.content,
-            }),
-          });
-          const resData = await res.json();
-          if (resData.complaints) setComplaints(resData.complaints);
-          return;
-        } catch (err) {
-          console.warn("API action:reply error:", err);
         }
       }
 
-      // Status toggled
-      if (item.status !== original.status) {
-        try {
-          const res = await fetch("/api/complaints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "toggle_status", id: item.id }),
-          });
-          const resData = await res.json();
-          if (resData.complaints) setComplaints(resData.complaints);
+      // Detect pastor answer change
+      for (const item of updatedList) {
+        const original = questions.find((q) => q.id === item.id);
+        if (!original) continue;
+
+        if (item.pastorAnswer !== original.pastorAnswer) {
+          try {
+            await update(ref(db, `lecture_qa/${item.id}`), {
+              pastorAnswer: item.pastorAnswer || "",
+              answeredAt: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.warn("Firebase pastor answer failed:", err);
+          }
           return;
-        } catch (err) {
-          console.warn("API action:toggle_status error:", err);
         }
       }
-    }
+    },
+    [questions]
+  );
 
-    setComplaints(updatedList);
-  };
-
-  // Add Question globally (Action: create)
-  const handleAddQuestion = async (
-    data: Omit<LectureQaItem, "id" | "likes" | "createdAt">
-  ) => {
-    try {
-      const res = await fetch("/api/lecture_qa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          question: data.question,
-          author: data.author,
-        }),
-      });
-      const resData = await res.json();
-      if (resData.questions) {
-        setQuestions(resData.questions);
-      }
-    } catch (apiErr) {
-      console.warn("API POST /api/lecture_qa action:create error:", apiErr);
-    }
-  };
-
-  // Like Question globally (Action: like)
-  const handleLikeQuestion = async (item: LectureQaItem) => {
-    try {
-      const res = await fetch("/api/lecture_qa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "like", id: item.id }),
-      });
-      const resData = await res.json();
-      if (resData.questions) {
-        setQuestions(resData.questions);
-      }
-    } catch (apiErr) {
-      console.warn("API POST /api/lecture_qa action:like error:", apiErr);
-    }
-  };
-
-  // Update Questions globally (Detect delete or pastor answer)
-  const handleUpdateQuestions = async (updatedList: LectureQaItem[]) => {
-    // Detect deletion
-    if (updatedList.length < questions.length) {
-      const currentIds = new Set(updatedList.map((q) => q.id));
-      const deletedItem = questions.find((q) => !currentIds.has(q.id));
-      if (deletedItem) {
-        try {
-          const res = await fetch("/api/lecture_qa", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "delete", id: deletedItem.id }),
-          });
-          const resData = await res.json();
-          if (resData.questions) setQuestions(resData.questions);
-          return;
-        } catch (err) {
-          console.warn("API action:delete QA error:", err);
-        }
-      }
-    }
-
-    // Detect pastor answer
-    for (const item of updatedList) {
-      const original = questions.find((q) => q.id === item.id);
-      if (!original) continue;
-
-      if (item.pastorAnswer !== original.pastorAnswer) {
-        try {
-          const res = await fetch("/api/lecture_qa", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "pastor_answer",
-              id: item.id,
-              pastorAnswer: item.pastorAnswer,
-            }),
-          });
-          const resData = await res.json();
-          if (resData.questions) setQuestions(resData.questions);
-          return;
-        } catch (err) {
-          console.warn("API action:pastor_answer error:", err);
-        }
-      }
-    }
-
-    setQuestions(updatedList);
-  };
-
+  // ─── Render ───
   const renderActiveView = () => {
     switch (currentTab) {
       case "schedule":
@@ -414,17 +309,8 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24 relative overflow-x-hidden">
-      {/* 상단 헤더 */}
-      <Header
-        currentTab={currentTab}
-        now={now}
-        onOpenMenu={() => setIsMenuOpen(true)}
-      />
-
-      {/* 메인 콘텐츠 뷰 */}
+      <Header currentTab={currentTab} now={now} onOpenMenu={() => setIsMenuOpen(true)} />
       <div className="-mt-10 relative z-10">{renderActiveView()}</div>
-
-      {/* 우측 슬라이드 메뉴 드로어 */}
       <DrawerMenu
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
@@ -432,13 +318,10 @@ export default function Home() {
         onSelectTab={(tab) => setCurrentTab(tab)}
         isAdminLoggedIn={isAdminLoggedIn}
       />
-
-      {/* 하단 고정 탭 바 (Mobile Bottom Navigation) */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-t border-slate-200/80 max-w-md mx-auto px-2 py-1.5 flex justify-around items-center shadow-lg">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
-
           return (
             <button
               key={item.id}

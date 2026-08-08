@@ -74,8 +74,28 @@ export default function Home() {
     return [];
   });
 
-  // Fetch latest global meals from API route on mount
+  // Fetch latest global meals from API route or preserve local edits
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const localSaved = localStorage.getItem("retreat_meals");
+      if (localSaved) {
+        try {
+          const parsed = JSON.parse(localSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Local edits exist -> push local edits to server API route so server meals.json gets updated!
+            fetch("/api/meals", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ meals: parsed }),
+            }).catch(() => {});
+            setMealDays(parsed);
+            return;
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Fallback if no local edits exist: fetch from server API
     fetch("/api/meals")
       .then((res) => res.json())
       .then((data) => {

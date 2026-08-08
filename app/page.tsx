@@ -18,7 +18,6 @@ import AdminView from "./components/AdminView";
 import { Calendar, Utensils, MessageSquare, HelpCircle, ShieldCheck } from "lucide-react";
 
 export default function Home() {
-  // Official clean schedule directly from schedule.json (Single Source of Truth)
   const defaultList: ScheduleItem[] = (
     (defaultScheduleData.schedules || []) as ScheduleItem[]
   ).sort((a, b) => {
@@ -38,42 +37,10 @@ export default function Home() {
   // Firebase Status ("connected" | "permission_denied" | "connecting")
   const [firebaseStatus, setFirebaseStatus] = useState<"connected" | "permission_denied" | "connecting">("connecting");
 
-  // Central States
-  const [mealDays, setMealDays] = useState<MealDay[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("retreat_meals");
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {}
-      }
-    }
-    return defaultMealData.meals as MealDay[];
-  });
-
-  const [complaints, setComplaints] = useState<ComplaintItem[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("retreat_complaints");
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {}
-      }
-    }
-    return [];
-  });
-
-  const [questions, setQuestions] = useState<LectureQaItem[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("retreat_lecture_qa");
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {}
-      }
-    }
-    return [];
-  });
+  // Central States (Server-driven, no local array overrides)
+  const [mealDays, setMealDays] = useState<MealDay[]>(defaultMealData.meals as MealDay[]);
+  const [complaints, setComplaints] = useState<ComplaintItem[]>([]);
+  const [questions, setQuestions] = useState<LectureQaItem[]>([]);
 
   // Helper to fetch server data (Single Source of Truth)
   const syncWithServerApi = () => {
@@ -83,35 +50,26 @@ export default function Home() {
       .then((data) => {
         if (data.meals && Array.isArray(data.meals)) {
           setMealDays(data.meals);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_meals", JSON.stringify(data.meals));
-          }
         }
       })
       .catch((err) => console.warn("API /api/meals fetch error:", err));
 
-    // 2. Complaints
+    // 2. Complaints (DC Inside style board API)
     fetch("/api/complaints")
       .then((res) => res.json())
       .then((data) => {
         if (data.complaints && Array.isArray(data.complaints)) {
           setComplaints(data.complaints);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_complaints", JSON.stringify(data.complaints));
-          }
         }
       })
       .catch((err) => console.warn("API /api/complaints fetch error:", err));
 
-    // 3. Questions
+    // 3. Questions (DC Inside style board API)
     fetch("/api/lecture_qa")
       .then((res) => res.json())
       .then((data) => {
         if (data.questions && Array.isArray(data.questions)) {
           setQuestions(data.questions);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_lecture_qa", JSON.stringify(data.questions));
-          }
         }
       })
       .catch((err) => console.warn("API /api/lecture_qa fetch error:", err));
@@ -142,9 +100,6 @@ export default function Home() {
         if (data) {
           const list = Array.isArray(data) ? data : Object.values(data);
           setMealDays(list as MealDay[]);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_meals", JSON.stringify(list));
-          }
         }
         setFirebaseStatus("connected");
       },
@@ -164,9 +119,6 @@ export default function Home() {
           }));
           list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           setComplaints(list);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_complaints", JSON.stringify(list));
-          }
         }
       },
       (error) => console.warn("Firebase Complaints Permission Warning:", error)
@@ -185,9 +137,6 @@ export default function Home() {
           }));
           list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
           setQuestions(list);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("retreat_lecture_qa", JSON.stringify(list));
-          }
         }
       },
       (error) => console.warn("Firebase Q&A Permission Warning:", error)
@@ -207,9 +156,6 @@ export default function Home() {
   // Update Meals globally
   const handleUpdateMeals = async (newMeals: MealDay[]) => {
     setMealDays(newMeals);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("retreat_meals", JSON.stringify(newMeals));
-    }
 
     try {
       const res = await fetch("/api/meals", {
@@ -232,219 +178,189 @@ export default function Home() {
     }
   };
 
-  // Add Complaint globally
+  // Add Complaint globally (Action: create)
   const handleAddComplaint = async (
     data: Omit<ComplaintItem, "id" | "createdAt" | "status" | "replies">
   ) => {
-    const newItem: ComplaintItem = {
-      id: "cp_" + Date.now(),
-      ...data,
-      createdAt: new Date().toISOString(),
-      status: "pending",
-      replies: [],
-    };
-
-    const updatedList = [newItem, ...complaints];
-    setComplaints(updatedList);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
-    }
-
     try {
       const res = await fetch("/api/complaints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ complaint: newItem }),
+        body: JSON.stringify({
+          action: "create",
+          title: data.title,
+          content: data.content,
+          author: data.author,
+          isPrivate: data.isPrivate,
+          passcode: data.passcode,
+        }),
       });
       const resData = await res.json();
       if (resData.complaints) {
         setComplaints(resData.complaints);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("retreat_complaints", JSON.stringify(resData.complaints));
-        }
       }
     } catch (apiErr) {
-      console.warn("API POST /api/complaints error:", apiErr);
-    }
-
-    try {
-      const complaintsRef = ref(db, "complaints");
-      const pushRef = push(complaintsRef);
-      await set(pushRef, {
-        title: newItem.title,
-        content: newItem.content,
-        author: newItem.author,
-        isPrivate: newItem.isPrivate,
-        passcode: newItem.passcode,
-        createdAt: newItem.createdAt,
-        status: newItem.status,
-        replies: [],
-      });
-      setFirebaseStatus("connected");
-    } catch (err) {
-      console.warn("Firebase 민원 등록 실패 -> 서버 API 저장 완료:", err);
+      console.warn("API POST /api/complaints action:create error:", apiErr);
     }
   };
 
-  // Update Complaints globally (Admin replies, status change, delete)
+  // Update Complaints globally (Detect delete, reply, or status toggle)
   const handleUpdateComplaints = async (updatedList: ComplaintItem[]) => {
-    setComplaints(updatedList);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("retreat_complaints", JSON.stringify(updatedList));
-    }
-
-    try {
-      const res = await fetch("/api/complaints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ complaints: updatedList }),
-      });
-      const resData = await res.json();
-      if (resData.complaints) {
-        setComplaints(resData.complaints);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("retreat_complaints", JSON.stringify(resData.complaints));
+    // Detect deletion
+    if (updatedList.length < complaints.length) {
+      const currentIds = new Set(updatedList.map((c) => c.id));
+      const deletedItem = complaints.find((c) => !currentIds.has(c.id));
+      if (deletedItem) {
+        try {
+          const res = await fetch("/api/complaints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete", id: deletedItem.id }),
+          });
+          const resData = await res.json();
+          if (resData.complaints) setComplaints(resData.complaints);
+          return;
+        } catch (err) {
+          console.warn("API action:delete error:", err);
         }
       }
-    } catch (apiErr) {
-      console.warn("API POST /api/complaints error:", apiErr);
     }
 
-    const firebaseObj: Record<string, any> = {};
-    updatedList.forEach((item) => {
-      firebaseObj[item.id] = {
-        title: item.title,
-        content: item.content,
-        author: item.author || "익명",
-        isPrivate: item.isPrivate,
-        passcode: item.passcode || "",
-        createdAt: item.createdAt,
-        status: item.status,
-        replies: item.replies || [],
-      };
-    });
+    // Detect reply or status change
+    for (const item of updatedList) {
+      const original = complaints.find((c) => c.id === item.id);
+      if (!original) continue;
 
-    try {
-      await set(ref(db, "complaints"), firebaseObj);
-    } catch (err) {
-      console.warn("Firebase 민원 업데이트 실패 -> 서버 API 적용 완료:", err);
+      // New reply added
+      if ((item.replies || []).length > (original.replies || []).length) {
+        const lastReply = item.replies![item.replies!.length - 1];
+        try {
+          const res = await fetch("/api/complaints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "reply",
+              id: item.id,
+              author: lastReply.author,
+              content: lastReply.content,
+            }),
+          });
+          const resData = await res.json();
+          if (resData.complaints) setComplaints(resData.complaints);
+          return;
+        } catch (err) {
+          console.warn("API action:reply error:", err);
+        }
+      }
+
+      // Status toggled
+      if (item.status !== original.status) {
+        try {
+          const res = await fetch("/api/complaints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "toggle_status", id: item.id }),
+          });
+          const resData = await res.json();
+          if (resData.complaints) setComplaints(resData.complaints);
+          return;
+        } catch (err) {
+          console.warn("API action:toggle_status error:", err);
+        }
+      }
     }
+
+    setComplaints(updatedList);
   };
 
-  // Add Question globally
+  // Add Question globally (Action: create)
   const handleAddQuestion = async (
     data: Omit<LectureQaItem, "id" | "likes" | "createdAt">
   ) => {
-    const newItem: LectureQaItem = {
-      id: "qa_" + Date.now(),
-      ...data,
-      likes: 0,
-      createdAt: new Date().toISOString(),
-    };
-
-    const updatedList = [newItem, ...questions];
-    setQuestions(updatedList);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
-    }
-
     try {
       const res = await fetch("/api/lecture_qa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: newItem }),
+        body: JSON.stringify({
+          action: "create",
+          question: data.question,
+          author: data.author,
+        }),
       });
       const resData = await res.json();
       if (resData.questions) {
         setQuestions(resData.questions);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("retreat_lecture_qa", JSON.stringify(resData.questions));
+      }
+    } catch (apiErr) {
+      console.warn("API POST /api/lecture_qa action:create error:", apiErr);
+    }
+  };
+
+  // Like Question globally (Action: like)
+  const handleLikeQuestion = async (item: LectureQaItem) => {
+    try {
+      const res = await fetch("/api/lecture_qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "like", id: item.id }),
+      });
+      const resData = await res.json();
+      if (resData.questions) {
+        setQuestions(resData.questions);
+      }
+    } catch (apiErr) {
+      console.warn("API POST /api/lecture_qa action:like error:", apiErr);
+    }
+  };
+
+  // Update Questions globally (Detect delete or pastor answer)
+  const handleUpdateQuestions = async (updatedList: LectureQaItem[]) => {
+    // Detect deletion
+    if (updatedList.length < questions.length) {
+      const currentIds = new Set(updatedList.map((q) => q.id));
+      const deletedItem = questions.find((q) => !currentIds.has(q.id));
+      if (deletedItem) {
+        try {
+          const res = await fetch("/api/lecture_qa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete", id: deletedItem.id }),
+          });
+          const resData = await res.json();
+          if (resData.questions) setQuestions(resData.questions);
+          return;
+        } catch (err) {
+          console.warn("API action:delete QA error:", err);
         }
       }
-    } catch (apiErr) {
-      console.warn("API POST /api/lecture_qa error:", apiErr);
     }
 
-    try {
-      const qaRef = ref(db, "lecture_qa");
-      const pushRef = push(qaRef);
-      await set(pushRef, {
-        question: newItem.question,
-        author: newItem.author,
-        likes: newItem.likes,
-        createdAt: newItem.createdAt,
-      });
-    } catch (err) {
-      console.warn("Firebase 질문 등록 실패 -> 서버 API 저장 완료:", err);
-    }
-  };
+    // Detect pastor answer
+    for (const item of updatedList) {
+      const original = questions.find((q) => q.id === item.id);
+      if (!original) continue;
 
-  // Like Question globally
-  const handleLikeQuestion = async (item: LectureQaItem) => {
-    const updatedList = questions.map((q) =>
-      q.id === item.id ? { ...q, likes: (q.likes || 0) + 1 } : q
-    );
-    setQuestions(updatedList);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
-    }
-
-    try {
-      const res = await fetch("/api/lecture_qa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questions: updatedList }),
-      });
-      const resData = await res.json();
-      if (resData.questions) {
-        setQuestions(resData.questions);
+      if (item.pastorAnswer !== original.pastorAnswer) {
+        try {
+          const res = await fetch("/api/lecture_qa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "pastor_answer",
+              id: item.id,
+              pastorAnswer: item.pastorAnswer,
+            }),
+          });
+          const resData = await res.json();
+          if (resData.questions) setQuestions(resData.questions);
+          return;
+        } catch (err) {
+          console.warn("API action:pastor_answer error:", err);
+        }
       }
-    } catch (apiErr) {
-      console.warn("API POST /api/lecture_qa error:", apiErr);
     }
 
-    try {
-      const firebaseObj: Record<string, any> = {};
-      updatedList.forEach((q) => {
-        firebaseObj[q.id] = q;
-      });
-      await set(ref(db, "lecture_qa"), firebaseObj);
-    } catch (err) {
-      console.warn("Firebase 좋아요 저장 실패 -> 서버 API 저장 완료:", err);
-    }
-  };
-
-  // Update Questions globally (Admin Pastor Answer, Delete)
-  const handleUpdateQuestions = async (updatedList: LectureQaItem[]) => {
     setQuestions(updatedList);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("retreat_lecture_qa", JSON.stringify(updatedList));
-    }
-
-    try {
-      const res = await fetch("/api/lecture_qa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questions: updatedList }),
-      });
-      const resData = await res.json();
-      if (resData.questions) {
-        setQuestions(resData.questions);
-      }
-    } catch (apiErr) {
-      console.warn("API POST /api/lecture_qa error:", apiErr);
-    }
-
-    const firebaseObj: Record<string, any> = {};
-    updatedList.forEach((q) => {
-      firebaseObj[q.id] = q;
-    });
-
-    try {
-      await set(ref(db, "lecture_qa"), firebaseObj);
-    } catch (err) {
-      console.warn("Firebase 질문 목록 업데이트 실패 -> 서버 API 적용 완료:", err);
-    }
   };
 
   const renderActiveView = () => {

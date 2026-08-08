@@ -94,9 +94,9 @@ export default function Home() {
         }
         setFirebaseStatus("connected");
       },
-      (error) => {
+      (error: any) => {
         console.warn("Firebase Schedules Permission Warning:", error);
-        if (error.message?.includes("permission_denied") || error.code?.includes("PERMISSION_DENIED")) {
+        if (error?.message?.includes("permission_denied") || error?.code?.includes("PERMISSION_DENIED")) {
           setFirebaseStatus("permission_denied");
         }
       }
